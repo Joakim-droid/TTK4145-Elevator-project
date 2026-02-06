@@ -4,5 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+crossbeam-channel = "0.5.15"
 driver-rust = { git = "https://github.com/TTK4145/driver-rust", tag = "v0.1.0" }
 network-rust = { git = "https://github.com/TTK4145/network-rust", tag = "v0.3.0" }
+serde = "1.0.228"
+serde_json = "1.0.149"

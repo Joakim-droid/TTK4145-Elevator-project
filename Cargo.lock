@@ -6,8 +6,11 @@ version = 4
 name = "TTK4145-Elevator-project"
 version = "0.1.0"
 dependencies = [
+ "crossbeam-channel",
  "driver-rust",
  "network-rust",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
