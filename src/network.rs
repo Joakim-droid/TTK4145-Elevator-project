@@ -1,3 +1,4 @@
+use crate::types::{event::Event, systemstate::SystemState};
 use crossbeam_channel::{self as cbc, Receiver, Sender};
 use network_rust::udpnet;
 use std::{
@@ -5,8 +6,6 @@ use std::{
     thread::{self, sleep},
     time::Duration,
 };
-
-use crate::types::{event::Event, systemstate::SystemState};
 
 pub fn spawn_send_thread(socket: UdpSocket, data_rx: Receiver<SystemState>, external_port: u16) {
     println!("Send thread spawned");

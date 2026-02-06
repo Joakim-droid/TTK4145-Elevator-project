@@ -72,8 +72,9 @@ impl SystemState {
     ) {
     }
 
-    // FIXME
-    pub fn merge_with(&mut self, other: &SystemState) {}
+    pub fn merge_with(&mut self, other: &SystemState) {
+        // The authority of clearing orders are given to an elevator that is at the correct floor and direction and door open
+    }
 }
 
 // Implementation for pretty printing the elevator state to terminal

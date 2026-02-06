@@ -8,7 +8,9 @@ use crate::{
 };
 use crossbeam_channel::{self as cbc, select};
 use driver_rust::elevio::elev::Elevator;
+mod assigner;
 mod config;
+mod fsm;
 mod hardware;
 mod network;
 mod types;
@@ -53,16 +55,26 @@ fn main() {
             recv(event_rx) -> event => {
                 match event {
                     Ok(Event::FloorReached(floor)) => {
-                        // system_state.arrive_at_floor(floor);
-                        // elevator_driver.floor_indicator(floor);
+                        system_state.arrive_at_floor(floor);
+
+                        let order_floor = assigner::decide_next_order(&system_state);
+
+                        if let Some(next_floor) = order_floor
+                            && next_floor == floor {
+                                // handle floor reached
+                            }
                     },
 
                     Ok(Event::ButtonPressed(floor,order)) => {
+                        system_state.add_order(floor, order);
 
-                        // Send button pressed update
-                        // Recieve acknowledge
-                        // Each elevator update state separate
+                        let next_order =  assigner::decide_next_order(&system_state);
 
+                        let door_opened = fsm::step(
+                            &elevator_driver,
+                            system_state.get_my_state().unwrap(),
+                            next_order
+                        );
                     },
 
                     Ok(Event::PeerUpdate(update)) => {
@@ -71,6 +83,8 @@ fn main() {
                         // Can maybe be done in the recieved state merge function
                         for _ in current_peers {
                             // remove or add peers to systemstate
+                            // Mark as dead or alive
+
                         };
                     },
 
@@ -78,7 +92,6 @@ fn main() {
                 }
                 // state_to_broadcast_tx.send(system_state.clone()).unwrap();
             }
-
         }
     }
 }

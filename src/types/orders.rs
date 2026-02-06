@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum OrderType {
-    HallUp = 0u8,
-    HallDown = 1u8,
-    Cab = 2u8,
+    HallUp = 0,
+    HallDown = 1,
+    Cab = 2,
 }
 
 impl From<OrderType> for u8 {

@@ -18,6 +18,7 @@ pub struct ElevatorState {
     pub behaviour: Behaviour,
     pub direction: u8,
     pub cab_requests: [bool; NUM_FLOORS],
+    pub door_open: bool,
 
     // Skip the doortimer when serializing the struct for broadcasting
     #[serde(skip)]
@@ -33,6 +34,7 @@ impl Default for ElevatorState {
             direction: DIRN_STOP,
             cab_requests: [false; NUM_FLOORS],
             door_timer: None,
+            door_open: false,
         }
     }
 }
