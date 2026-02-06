@@ -1,29 +1,55 @@
+use std::net::UdpSocket;
+
 use crate::{
     config::NUM_FLOORS,
     hardware::{spawn_button_poller, spawn_floor_poller},
+    network::{spawn_peer_discovery, spawn_recieve_thread, spawn_send_thread},
     types::{event::Event, systemstate::SystemState},
 };
 use crossbeam_channel::{self as cbc, select};
 use driver_rust::elevio::elev::Elevator;
 mod config;
 mod hardware;
+mod network;
 mod types;
 
 fn main() {
-    let elevator_address = "localhost:15658";
+    let elevator_address = "localhost:15658".to_string();
 
     let elevator_driver =
-        Elevator::init(elevator_address, NUM_FLOORS as u8).expect("Error connecting to Elevator");
+        Elevator::init(&elevator_address, NUM_FLOORS as u8).expect("Error connecting to Elevator");
 
-    let mut system_state = SystemState::new(elevator_address);
+    let mut system_state = SystemState::new(&elevator_address);
 
     let (event_tx, event_rx) = cbc::unbounded::<Event>();
 
     spawn_floor_poller(&elevator_driver, event_tx.clone());
     spawn_button_poller(&elevator_driver, event_tx.clone());
 
+    let (state_to_broadcast_tx, state_to_broadcast_rx) = cbc::unbounded::<SystemState>();
+    let (peer_state_tx, peer_state_rx) = cbc::unbounded::<SystemState>();
+
+    let internal_port = 5001;
+    let external_port = 5000;
+
+    let socket = UdpSocket::bind(format!("0.0.0.0:{}", internal_port)).expect("Failed to bind");
+    let send_socket = socket.try_clone().unwrap();
+
+    spawn_recieve_thread(socket, peer_state_tx);
+    spawn_send_thread(send_socket, state_to_broadcast_rx, external_port);
+
+    spawn_peer_discovery(elevator_address.clone(), event_tx);
+
     loop {
         select! {
+            recv(peer_state_rx) -> msg => {
+                println!("Received state from network");
+                if let Ok(fetched_state) = msg {
+                    system_state.merge_with(&fetched_state);
+                    println!("{system_state}")
+                }
+            }
+
             recv(event_rx) -> event => {
                 match event {
                     Ok(Event::FloorReached(floor)) => {
