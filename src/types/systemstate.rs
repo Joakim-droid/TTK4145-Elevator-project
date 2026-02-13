@@ -141,11 +141,7 @@ impl SystemState {
 
 
     }
-
-
-                
-                
-                }}
+}}
         
 
         
@@ -153,8 +149,8 @@ impl SystemState {
 
         
          */
-
     }
+}
 
 // Implementation for pretty printing the elevator state to terminal
 impl fmt::Display for SystemState {
