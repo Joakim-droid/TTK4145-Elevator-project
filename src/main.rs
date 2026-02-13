@@ -40,7 +40,7 @@ fn main() {
     spawn_recieve_thread(socket, peer_state_tx);
     spawn_send_thread(send_socket, state_to_broadcast_rx, external_port);
 
-    spawn_peer_discovery(elevator_address.clone(), event_tx);
+    spawn_peer_discovery(elevator_address.clone(), event_tx.clone());
 
     loop {
         select! {
@@ -54,7 +54,8 @@ fn main() {
                     fsm::step(
                         &elevator_driver,
                         system_state.get_my_state().unwrap(),
-                        order_floor
+                        order_floor,
+                        event_tx.clone()
                     );
                 }
             }
@@ -66,16 +67,12 @@ fn main() {
 
                         let order_floor = assigner::decide_next_order(&system_state);
 
-                        if let Some(next_floor) = order_floor
-                            && next_floor == floor {
-                                // handle floor reached
-                            }
-
                         fsm::step(
                             &elevator_driver,
                             // FIXME: Might need to check instead of unwrap
                             system_state.get_my_state().unwrap(),
-                            order_floor
+                            order_floor,
+                            event_tx.clone()
                         );
 
                     },
@@ -88,7 +85,8 @@ fn main() {
                         fsm::step(
                             &elevator_driver,
                             system_state.get_my_state().unwrap(),
-                            next_order
+                            next_order,
+                            event_tx.clone()
                         );
                     },
 
@@ -101,6 +99,21 @@ fn main() {
                             // Mark as dead or alive
 
                         };
+                    },
+
+                    Ok(Event::DoorOpenTimeOut(timer_id)) => {
+                        let my_state = system_state.get_my_state().unwrap();
+
+
+                        if my_state.get_current_timer_id() == timer_id {
+                            elevator_driver.door_light(false);
+                            my_state.close_door();
+                            let next_order = assigner::decide_next_order(&system_state);
+
+                            fsm::step(&elevator_driver, system_state.get_my_state().unwrap(), next_order, event_tx.clone());
+                        } else {
+                            println!("Ignored stale timer event (ID: {})", timer_id);
+                        }
                     },
 
                     Err(_) => println!("Error"),

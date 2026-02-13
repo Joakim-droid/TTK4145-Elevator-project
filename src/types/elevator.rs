@@ -1,5 +1,3 @@
-use std::time::SystemTime;
-
 use crate::config::NUM_FLOORS;
 use driver_rust::elevio::elev::{DIRN_DOWN, DIRN_STOP, DIRN_UP};
 use serde::{Deserialize, Serialize};
@@ -19,11 +17,8 @@ pub struct ElevatorState {
     direction: u8,
     cab_requests: [bool; NUM_FLOORS],
     door_open: bool,
-
-    // Skip the doortimer when serializing the struct for broadcasting
-    #[serde(skip)]
-    #[serde(default)]
-    door_timer: Option<SystemTime>,
+    // Keeps track of the active door timer
+    door_open_counter: u64,
 }
 
 impl ElevatorState {
@@ -48,17 +43,20 @@ impl ElevatorState {
         self.cab_requests[floor as usize] = true;
     }
 
-    pub fn open_door(&mut self) {
+    pub fn open_door(&mut self) -> Option<u64> {
         if self.floor.is_none() {
             eprintln!("Cant open door in between floors");
-            return;
+            return None;
         }
 
         if self.behaviour == Behaviour::Moving {
             self.stop();
         }
-        self.door_timer = Some(SystemTime::now());
+
         self.behaviour = Behaviour::DoorOpen;
+
+        self.door_open_counter += 1;
+        Some(self.door_open_counter)
     }
 
     pub fn close_door(&mut self) {
@@ -67,7 +65,6 @@ impl ElevatorState {
             return;
         }
 
-        self.door_timer = None;
         self.behaviour = Behaviour::Idle;
     }
 
@@ -83,8 +80,8 @@ impl ElevatorState {
         }
     }
 
-    pub fn get_door_timer(&self) -> Option<SystemTime> {
-        self.door_timer
+    pub fn get_current_timer_id(&self) -> u64 {
+        self.door_open_counter
     }
 }
 
@@ -95,8 +92,8 @@ impl Default for ElevatorState {
             behaviour: Behaviour::Idle,
             direction: DIRN_STOP,
             cab_requests: [false; NUM_FLOORS],
-            door_timer: None,
             door_open: false,
+            door_open_counter: 0,
         }
     }
 }

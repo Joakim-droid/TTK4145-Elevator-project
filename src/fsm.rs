@@ -1,9 +1,12 @@
 use crate::{
     config::DOOR_OPEN_DURATION,
-    types::elevator::{Behaviour, ElevatorState},
+    types::{
+        elevator::{Behaviour, ElevatorState},
+        event::Event,
+    },
 };
+use crossbeam_channel::Sender;
 use driver_rust::elevio::elev::{DIRN_DOWN, DIRN_STOP, DIRN_UP, Elevator};
-use std::time::{Duration, SystemTime};
 
 fn find_direction(current_floor: u8, goal_floor: u8) -> u8 {
     if goal_floor > current_floor {
@@ -13,11 +16,19 @@ fn find_direction(current_floor: u8, goal_floor: u8) -> u8 {
     }
 }
 
+fn spawn_door_timer(timer_id: u64, event_tx: Sender<Event>) {
+    std::thread::spawn(move || {
+        std::thread::sleep(DOOR_OPEN_DURATION);
+        event_tx.send(Event::DoorOpenTimeOut(timer_id)).unwrap();
+    });
+}
+
 /// Executes the necessary actions to serve the goal
 pub fn step(
     elevator_driver: &Elevator,
-    elevator_state: &mut ElevatorState, // Timer is inside here now
+    elevator_state: &mut ElevatorState,
     goal: Option<u8>,
+    event_tx: Sender<Event>,
 ) {
     if goal.is_none() {
         elevator_driver.motor_direction(DIRN_STOP);
@@ -38,9 +49,11 @@ pub fn step(
             let current_floor = current_floor.unwrap();
             let goal_floor = goal.unwrap();
 
-            if current_floor == goal_floor {
-                elevator_state.open_door();
+            if current_floor == goal_floor
+                && let Some(timer_id) = elevator_state.open_door()
+            {
                 elevator_driver.door_light(true);
+                spawn_door_timer(timer_id, event_tx.clone());
             } else {
                 let direction = find_direction(current_floor, goal_floor);
 
@@ -59,36 +72,43 @@ pub fn step(
                 return;
             }
 
-            if Some(current_floor) == Some(goal) {
-                elevator_driver.motor_direction(DIRN_STOP);
-                elevator_state.open_door();
+            if Some(current_floor) == Some(goal)
+                && let Some(timer_id) = elevator_state.open_door()
+            {
                 elevator_driver.door_light(true);
+                elevator_driver.motor_direction(DIRN_STOP);
+                spawn_door_timer(timer_id, event_tx.clone());
             }
         }
 
         Behaviour::DoorOpen => {
-            if let Some(goal_floor) = goal
-                && let Some(current) = elevator_state.get_floor()
-                && goal_floor == current
-            {
-                // Resets timer if a button on the current floor is pressed while the door is open
-                elevator_state.open_door();
+            let current_floor = elevator_state.get_floor();
+
+            if current_floor.is_none() {
+                eprintln!(
+                    "ERROR: Elevator is in DoorOpen state, but floor sensor is None (Between floors)."
+                );
                 return;
             }
 
-            let door_timer = elevator_state.get_door_timer();
+            let current_floor = current_floor.unwrap();
 
-            if door_timer.is_none() {
-                eprintln!("Door should not be open with no timer");
+            if goal.is_none() {
+                // No orders, waiting for door time out
                 return;
             }
 
-            let door_timer = door_timer.unwrap();
+            let goal_floor = goal.unwrap();
 
-            // TODO: May have to handle elapsed function failing
-            if door_timer.elapsed().unwrap_or(Duration::ZERO) >= DOOR_OPEN_DURATION {
-                elevator_driver.door_light(false);
-                elevator_state.close_door();
+            if goal_floor != current_floor {
+                // New goal exist, but must wait for door timeout.
+                return;
+            }
+
+            // Resets timer if a button on the current floor is pressed while the door is open
+            if let Some(timer_id) = elevator_state.open_door() {
+                elevator_driver.door_light(true);
+                spawn_door_timer(timer_id, event_tx.clone());
             }
         }
     }
