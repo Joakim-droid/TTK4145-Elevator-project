@@ -2,7 +2,7 @@ use std::net::UdpSocket;
 
 use crate::{
     config::NUM_FLOORS,
-    hardware::{spawn_button_poller, spawn_floor_poller},
+    hardware::{spawn_button_poller, spawn_floor_poller, spawn_obstruction_poller},
     network::{spawn_peer_discovery, spawn_recieve_thread, spawn_send_thread},
     types::{event::Event, systemstate::SystemState},
 };
@@ -27,6 +27,7 @@ fn main() {
 
     spawn_floor_poller(&elevator_driver, event_tx.clone());
     spawn_button_poller(&elevator_driver, event_tx.clone());
+    spawn_obstruction_poller(&elevator_driver, event_tx.clone());
 
     let (state_to_broadcast_tx, state_to_broadcast_rx) = cbc::unbounded::<SystemState>();
     let (peer_state_tx, peer_state_rx) = cbc::unbounded::<SystemState>();
@@ -114,6 +115,17 @@ fn main() {
                         } else {
                             println!("Ignored stale timer event (ID: {})", timer_id);
                         }
+                    },
+
+                    Ok(Event::Obstructed(obstructed)) => {
+                        let my_state = system_state.get_my_state().unwrap();
+                        
+                        let _ = fsm::step(
+                            &elevator_driver,
+                            my_state,
+                            None,
+                            event_tx.clone()
+                        );
                     },
 
                     Err(_) => println!("Error"),

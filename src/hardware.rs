@@ -70,3 +70,30 @@ pub fn spawn_floor_poller(elevator: &Elevator, channel_sender: Sender<Event>) {
         }
     });
 }
+
+// Function to poll obstruction sensor and sending the corresponding event when it changes. 
+pub fn spawn_obstruction_poller(elevator: &Elevator, channel_sender: Sender<Event>) {
+    let elevator_handler = elevator.clone();
+
+    thread::spawn(move || {
+        let mut prev_val: Option<bool> = None;
+
+        loop {
+            let obstructed = elevator_handler.obstruction();
+
+            if prev_val == Some(obstructed){
+                sleep(Duration::from_millis(20));
+                continue;
+            }
+           if channel_sender
+                .send(Event::Obstructed(obstructed))
+                .is_err()
+            {
+                break;
+            }
+            prev_val = Some(obstructed);
+            sleep(Duration::from_millis(20));
+        }
+
+    });
+}

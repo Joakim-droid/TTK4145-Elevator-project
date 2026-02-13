@@ -17,6 +17,7 @@ pub struct ElevatorState {
     direction: u8,
     cab_requests: [bool; NUM_FLOORS],
     door_open: bool,
+    obstruction: bool,
     // Keeps track of the active door timer
     door_open_counter: u64,
 }
@@ -94,6 +95,7 @@ impl Default for ElevatorState {
             cab_requests: [false; NUM_FLOORS],
             door_open: false,
             door_open_counter: 0,
+            obstruction: false,
         }
     }
 }
