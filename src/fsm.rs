@@ -1,18 +1,19 @@
 use crate::{
     config::DOOR_OPEN_DURATION,
     types::{
+        direction::Direction,
         elevator::{Behaviour, ElevatorState},
         event::Event,
     },
 };
 use crossbeam_channel::Sender;
-use driver_rust::elevio::elev::{DIRN_DOWN, DIRN_STOP, DIRN_UP, Elevator};
+use driver_rust::elevio::elev::Elevator;
 
-fn find_direction(current_floor: u8, goal_floor: u8) -> u8 {
+fn find_direction(current_floor: u8, goal_floor: u8) -> Direction {
     if goal_floor > current_floor {
-        DIRN_UP
+        Direction::Up
     } else {
-        DIRN_DOWN
+        Direction::Down
     }
 }
 
@@ -31,7 +32,7 @@ pub fn step(
     event_tx: Sender<Event>,
 ) {
     if goal.is_none() {
-        elevator_driver.motor_direction(DIRN_STOP);
+        elevator_driver.motor_direction(Direction::Stop.into());
         elevator_state.stop();
         return;
     }
@@ -57,7 +58,7 @@ pub fn step(
             } else {
                 let direction = find_direction(current_floor, goal_floor);
 
-                elevator_driver.motor_direction(direction);
+                elevator_driver.motor_direction(direction.into());
                 elevator_state.set_direction(direction);
             }
         }
@@ -68,7 +69,7 @@ pub fn step(
             if current_floor.is_some() && goal.is_none() {
                 // No orders to serve
                 elevator_state.stop();
-                elevator_driver.motor_direction(DIRN_STOP);
+                elevator_driver.motor_direction(Direction::Stop.into());
                 return;
             }
 
@@ -76,7 +77,7 @@ pub fn step(
                 && let Some(timer_id) = elevator_state.open_door()
             {
                 elevator_driver.door_light(true);
-                elevator_driver.motor_direction(DIRN_STOP);
+                elevator_driver.motor_direction(Direction::Stop.into());
                 spawn_door_timer(timer_id, event_tx.clone());
             }
         }

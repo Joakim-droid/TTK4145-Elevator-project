@@ -1,5 +1,4 @@
-use crate::config::NUM_FLOORS;
-use driver_rust::elevio::elev::{DIRN_DOWN, DIRN_STOP, DIRN_UP};
+use crate::{config::NUM_FLOORS, types::direction::Direction};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
@@ -14,7 +13,7 @@ pub enum Behaviour {
 pub struct ElevatorState {
     floor: Option<u8>,
     behaviour: Behaviour,
-    direction: u8,
+    direction: Direction,
     cab_requests: [bool; NUM_FLOORS],
     door_open: bool,
     obstruction: bool,
@@ -25,7 +24,7 @@ pub struct ElevatorState {
 impl ElevatorState {
     pub fn stop(&mut self) {
         self.behaviour = Behaviour::Idle;
-        self.direction = DIRN_STOP;
+        self.direction = Direction::Stop;
     }
 
     pub fn get_behavior(&self) -> Behaviour {
@@ -69,14 +68,14 @@ impl ElevatorState {
         self.behaviour = Behaviour::Idle;
     }
 
-    pub fn set_direction(&mut self, direction: u8) {
-        if direction == DIRN_STOP {
+    pub fn set_direction(&mut self, direction: Direction) {
+        if direction == Direction::Stop {
             self.stop();
-        } else if direction == DIRN_UP {
-            self.direction = DIRN_UP;
+        } else if direction == Direction::Up {
+            self.direction = Direction::Up;
             self.behaviour = Behaviour::Moving
         } else {
-            self.direction = DIRN_DOWN;
+            self.direction = Direction::Down;
             self.behaviour = Behaviour::Moving;
         }
     }
@@ -91,7 +90,7 @@ impl Default for ElevatorState {
         Self {
             floor: None,
             behaviour: Behaviour::Idle,
-            direction: DIRN_STOP,
+            direction: Direction::Stop,
             cab_requests: [false; NUM_FLOORS],
             door_open: false,
             door_open_counter: 0,

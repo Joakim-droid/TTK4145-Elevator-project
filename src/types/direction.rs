@@ -1,4 +1,4 @@
-use driver_rust::elevio::elev::{DIRN_DOWN, DIRN_STOP, DIRN_UP, Elevator};
+use driver_rust::elevio::elev::{DIRN_DOWN, DIRN_STOP, DIRN_UP};
 use serde::{Deserialize, Serialize};
 
 #[repr(u8)]
