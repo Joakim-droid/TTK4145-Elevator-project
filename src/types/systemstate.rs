@@ -1,6 +1,7 @@
 use crate::types::elevator::ElevatorState;
 use crate::{config::NUM_FLOORS, types::orders::OrderType};
 use core::fmt;
+use driver_rust::elevio::elev::{DIRN_DOWN, DIRN_STOP, DIRN_UP};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -74,8 +75,87 @@ impl SystemState {
 
     pub fn merge_with(&mut self, other: &SystemState) {
         // The authority of clearing orders are given to an elevator that is at the correct floor and direction and door open
+
+        // epoch: Represent a counter that increments based on button presses. Used to determine which state is more recent for mergining.
+        // active: Represents if an epoch is valid
+
+        /*
+        PSEUDOCODE // ALGORITHM FOR MERGING
+
+        hall_epoch: [[u64; 2]; NUM_FLOORS] // up and down
+        hall_orders: [[bool; 2]; NUM_FLOORS] // up and down
+
+        sequnece: Counter: local operations // used to indicate how recent a state is
+
+        // When will it change?: 
+
+        if (change in local elevator state) {
+            increment sequence
+
+        if (hall order) {
+            increment epoch for that floor and direction
+            make request active
+            }
+
+        if (hall order complete) {
+            hall_orders[floor][dir] = false
+            }
+        
+        if elevator.seq > other.seq {
+            keep the more recent state
+            }
+
+        // How to merge:
+        
+        // Updating own state:
+        for state, id in other.elevators{
+
+            if elevator id does not exist in self.elevators {
+                add elevator to state // add new elevator to state
+            } 
+            else {
+                if self.seq > other.seq {
+                    keep the more recent state
+                    }
+            }
+        
+        // Updating hall orders:
+        for floor in floors {
+            for direction in [up, down] {
+                look at order and epoch for that floor and direction in both states
+
+                if other.epoch > self.epoch 
+                    update both orders and epoch to other since it is more relevant
+
+                else if self.epoch > other.epoch
+                    keep self
+                
+                if self.orders[floor][direction] != other.orders[floor][direction]
+                    clear if allowed // helper function
+
+                
+        // CLEARING ORDERS: 
+
+        CLEAR_ORDER(floor, direction){
+        // Finds out if order at (floor, direction) can be cleared
+        
+
+
     }
-}
+
+
+                
+                
+                }}
+        
+
+        
+
+
+        
+         */
+
+    }
 
 // Implementation for pretty printing the elevator state to terminal
 impl fmt::Display for SystemState {
