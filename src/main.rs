@@ -48,7 +48,14 @@ fn main() {
                 println!("Received state from network");
                 if let Ok(fetched_state) = msg {
                     system_state.merge_with(&fetched_state);
-                    println!("{system_state}")
+                    // println!("{system_state}")
+                    let order_floor = assigner::decide_next_order(&system_state);
+
+                    fsm::step(
+                        &elevator_driver,
+                        system_state.get_my_state().unwrap(),
+                        order_floor
+                    );
                 }
             }
 
@@ -63,6 +70,14 @@ fn main() {
                             && next_floor == floor {
                                 // handle floor reached
                             }
+
+                        fsm::step(
+                            &elevator_driver,
+                            // FIXME: Might need to check instead of unwrap
+                            system_state.get_my_state().unwrap(),
+                            order_floor
+                        );
+
                     },
 
                     Ok(Event::ButtonPressed(floor,order)) => {
@@ -70,7 +85,7 @@ fn main() {
 
                         let next_order =  assigner::decide_next_order(&system_state);
 
-                        let door_opened = fsm::step(
+                        fsm::step(
                             &elevator_driver,
                             system_state.get_my_state().unwrap(),
                             next_order
