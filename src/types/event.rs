@@ -5,5 +5,6 @@ pub enum Event {
     FloorReached(u8),
     ButtonPressed(u8, OrderType),
     PeerUpdate(udpnet::peers::PeerUpdate),
+    DoorOpenTimeOut(u64),
     Obstructed(bool),
 }

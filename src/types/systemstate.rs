@@ -32,9 +32,9 @@ impl SystemState {
 
     pub fn arrive_at_floor(&mut self, floor: u8) {
         if let Some(this_elevator_state) = self.elevators.get_mut(&self.my_id) {
-            this_elevator_state.floor = Some(floor);
+            this_elevator_state.set_floor(floor);
         } else {
-            println!("Current elevator not in state");
+            eprintln!("Current elevator not in state");
         }
     }
 
@@ -42,14 +42,14 @@ impl SystemState {
         match order {
             OrderType::Cab => {
                 if (floor as usize) >= NUM_FLOORS {
-                    println!("Undefined floor ordered");
+                    eprintln!("Undefined floor ordered");
                     return;
                 }
 
                 if let Some(this_elevator_state) = self.elevators.get_mut(&self.my_id) {
-                    this_elevator_state.cab_requests[floor as usize] = true;
+                    this_elevator_state.set_cab_request(floor);
                 } else {
-                    println!("Current elevator not in state");
+                    eprintln!("Current elevator not in state");
                 }
             }
             OrderType::HallUp => {
@@ -58,7 +58,6 @@ impl SystemState {
                 }
             }
             OrderType::HallDown => {
-                // Hall down request (global)
                 if (floor as usize) < NUM_FLOORS {
                     self.hall_requests[floor as usize][1] = true;
                 }

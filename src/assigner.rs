@@ -8,10 +8,6 @@ use crate::{
 
 fn time_to_serve_request(e: &ElevatorState, req_floor: u8) -> u32 {
     let mut duration = 0;
-
-    if let Some(f) = e.floor {
-        duration += (f as i32 - req_floor as i32).abs() as u32;
-    }
     duration
 }
 
