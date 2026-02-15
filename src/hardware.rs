@@ -71,7 +71,7 @@ pub fn spawn_floor_poller(elevator: &Elevator, channel_sender: Sender<Event>) {
     });
 }
 
-// Function to poll obstruction sensor and sending the corresponding event when it changes. 
+// Function to poll obstruction sensor and sending the corresponding event when it changes.
 pub fn spawn_obstruction_poller(elevator: &Elevator, channel_sender: Sender<Event>) {
     let elevator_handler = elevator.clone();
 
@@ -81,19 +81,40 @@ pub fn spawn_obstruction_poller(elevator: &Elevator, channel_sender: Sender<Even
         loop {
             let obstructed = elevator_handler.obstruction();
 
-            if prev_val == Some(obstructed){
+            if prev_val == Some(obstructed) {
                 sleep(Duration::from_millis(20));
                 continue;
             }
-           if channel_sender
-                .send(Event::Obstructed(obstructed))
-                .is_err()
-            {
+            if channel_sender.send(Event::Obstructed(obstructed)).is_err() {
                 break;
             }
             prev_val = Some(obstructed);
             sleep(Duration::from_millis(20));
         }
+    });
+}
 
+pub fn spawn_stop_button_poller(elevator: &Elevator, channel_sender: Sender<Event>) {
+    let elevator_handler = elevator.clone();
+
+    thread::spawn(move || {
+        let mut prev_val: Option<bool> = None;
+
+        loop {
+            let is_stop_pressed = elevator_handler.stop_button();
+
+            if prev_val == Some(is_stop_pressed) {
+                sleep(Duration::from_millis(20));
+                continue;
+            }
+            if channel_sender
+                .send(Event::EmergencyStop(is_stop_pressed))
+                .is_err()
+            {
+                break;
+            }
+            prev_val = Some(is_stop_pressed);
+            sleep(Duration::from_millis(20));
+        }
     });
 }

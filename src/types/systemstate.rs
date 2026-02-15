@@ -1,3 +1,4 @@
+use crate::types::direction::{self, Direction};
 use crate::types::elevator::ElevatorState;
 use crate::{config::NUM_FLOORS, types::orders::OrderType};
 use core::fmt;
@@ -6,9 +7,9 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SystemState {
-    pub my_id: String,
-    pub elevators: HashMap<String, ElevatorState>,
-    pub hall_requests: [[bool; 2]; NUM_FLOORS],
+    my_id: String,
+    elevators: HashMap<String, ElevatorState>,
+    hall_requests: [[bool; 2]; NUM_FLOORS],
 }
 
 impl SystemState {
@@ -25,50 +26,65 @@ impl SystemState {
         }
     }
 
-    pub fn get_my_state(&mut self) -> std::option::Option<&mut ElevatorState> {
-        self.elevators.get_mut(&self.my_id)
+    pub fn get_my_state(&mut self) -> &mut ElevatorState {
+        self.elevators
+            .entry(self.my_id.clone())
+            // TODO Maybe exit program if not found instead of inserting default state
+            .or_default()
+    }
+
+    pub fn get_my_id(&self) -> String {
+        self.my_id.clone()
+    }
+
+    fn set_hall_order(&mut self, arrive: bool, floor: u8, order: OrderType) {
+        match order {
+            OrderType::HallUp => self.hall_requests[floor as usize][0] = arrive,
+            OrderType::HallDown => self.hall_requests[floor as usize][1] = arrive,
+            OrderType::Cab => {
+                eprintln!("Should not be called with Cab order")
+            }
+        }
     }
 
     pub fn arrive_at_floor(&mut self, floor: u8) {
-        if let Some(this_elevator_state) = self.elevators.get_mut(&self.my_id) {
-            this_elevator_state.set_floor(floor);
-        } else {
-            eprintln!("Current elevator not in state");
-        }
+        let local_state = self.get_my_state();
+        local_state.set_floor(floor);
     }
 
     pub fn add_order(&mut self, floor: u8, order: OrderType) {
-        match order {
-            OrderType::Cab => {
-                if (floor as usize) >= NUM_FLOORS {
-                    eprintln!("Undefined floor ordered");
-                    return;
-                }
-
-                if let Some(this_elevator_state) = self.elevators.get_mut(&self.my_id) {
-                    this_elevator_state.set_cab_request(floor);
-                } else {
-                    eprintln!("Current elevator not in state");
-                }
-            }
-            OrderType::HallUp => {
-                if (floor as usize) < NUM_FLOORS {
-                    self.hall_requests[floor as usize][0] = true;
-                }
-            }
-            OrderType::HallDown => {
-                if (floor as usize) < NUM_FLOORS {
-                    self.hall_requests[floor as usize][1] = true;
-                }
-            }
+        if (floor as usize) >= NUM_FLOORS {
+            eprintln!("Undefined floor ordered");
+            return;
+        }
+        if order == OrderType::Cab {
+            let local_state = self.get_my_state();
+            local_state.add_cab_request(floor);
+        } else {
+            self.set_hall_order(true, floor, order);
         }
     }
 
-    pub fn clear_orders_at_floor(
-        &mut self,
-        floor: u8,
-        elevator_driver: &driver_rust::elevio::elev::Elevator,
-    ) {
+    pub fn clear_order(&mut self, floor: u8) {
+        if (floor as usize) >= NUM_FLOORS {
+            eprintln!("Undefined floor cleared");
+            return;
+        }
+
+        let local_state = self.get_my_state();
+        local_state.clear_cab_request(floor);
+
+        let direction = local_state.get_direction();
+
+        match direction {
+            Direction::Up => self.set_hall_order(false, floor, OrderType::HallUp),
+            Direction::Down => self.set_hall_order(false, floor, OrderType::HallDown),
+            Direction::Stop => {
+                // FIXME: Read specs and see the specific behavior for when both up and down are pressed in idle elevator
+                self.set_hall_order(false, floor, OrderType::HallUp);
+                self.set_hall_order(false, floor, OrderType::HallDown);
+            }
+        }
     }
 
     pub fn merge_with(&mut self, other: &SystemState) {

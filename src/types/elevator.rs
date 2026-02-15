@@ -17,6 +17,7 @@ pub struct ElevatorState {
     cab_requests: [bool; NUM_FLOORS],
     door_open: bool,
     obstruction: bool,
+    emergency_stop: bool,
     // Keeps track of the active door timer
     door_open_counter: u64,
 }
@@ -39,8 +40,21 @@ impl ElevatorState {
         self.floor
     }
 
-    pub fn set_cab_request(&mut self, floor: u8) {
+    pub fn add_cab_request(&mut self, floor: u8) {
+        if floor >= NUM_FLOORS as u8 {
+            println!("Invalid floor requested");
+            return;
+        }
+
         self.cab_requests[floor as usize] = true;
+    }
+
+    pub fn clear_cab_request(&mut self, floor: u8) {
+        if floor >= NUM_FLOORS as u8 {
+            println!("Invalid floor cleared");
+            return;
+        }
+        self.cab_requests[floor as usize] = false;
     }
 
     pub fn open_door(&mut self) -> Option<u64> {
@@ -80,8 +94,28 @@ impl ElevatorState {
         }
     }
 
+    pub fn get_direction(&self) -> Direction {
+        self.direction
+    }
+
     pub fn get_current_timer_id(&self) -> u64 {
         self.door_open_counter
+    }
+
+    pub fn is_obstructed(&self) -> bool {
+        self.obstruction
+    }
+
+    pub fn set_obstructed(&mut self, is_obstructed: bool) {
+        self.obstruction = is_obstructed;
+    }
+
+    pub fn is_emergency_stop(&self) -> bool {
+        self.emergency_stop
+    }
+
+    pub fn set_emergency_stop(&mut self, is_pressed: bool) {
+        self.emergency_stop = is_pressed
     }
 }
 
@@ -95,6 +129,7 @@ impl Default for ElevatorState {
             door_open: false,
             door_open_counter: 0,
             obstruction: false,
+            emergency_stop: false,
         }
     }
 }

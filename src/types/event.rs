@@ -7,4 +7,5 @@ pub enum Event {
     PeerUpdate(udpnet::peers::PeerUpdate),
     DoorOpenTimeOut(u64),
     Obstructed(bool),
+    EmergencyStop(bool),
 }
