@@ -1,9 +1,11 @@
 use std::process::Command;
+use std::collections::HashMap;
 use crate::{
-    // config::NUM_FLOORS,
+    config::NUM_FLOORS,
     types::{
         elevator::{ElevatorState},
         systemstate::SystemState,
+        orders::OrderType
     },
 };
 
@@ -32,11 +34,25 @@ pub fn decide_next_order(system_state: &SystemState) -> Option<u8> {
             .output()
             .expect("Failed to execute hall_request_assigner");
 
-
+        let mut assigned_hall_requests = vec![vec![false; 2]; NUM_FLOORS];
         if program_out.status.success() {
-            let hra_output_str = String::from_utf8(program_out.stdout).expect("Invalid UTF-8 hra_output");
-            println!("{}", hra_output_str)
+            let hall_request_assigner_output_str = String::from_utf8(program_out.stdout).expect("Invalid UTF-8 hra_output");
+            let hall_request_assigner_output_value = serde_json::from_str::<HashMap<String, Vec<Vec<bool>>>>(&hall_request_assigner_output_str)
+                    .expect("Failed to deserialize");
+            // just to see what the assigner returned
+            println!("{}", hall_request_assigner_output_str);
+            
+            for (id, hall_requests) in hall_request_assigner_output_value.iter() {
+                if id == &system_state_clone.my_id {
+                    for floor in 0..NUM_FLOORS {
+                        assigned_hall_requests[floor as usize][OrderType::HallUp as usize] = hall_requests[floor as usize][OrderType::HallUp  as usize];
+                        assigned_hall_requests[floor as usize][OrderType::HallDown  as usize] = hall_requests[floor as usize][OrderType::HallDown  as usize];
+                    }
+                }
+            }
+
+
         } 
-        None
+        return Some(assigned_hall_requests)
 
 }
