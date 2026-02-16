@@ -61,6 +61,7 @@ fn main() {
                         event_tx.clone()
                     );
                 }
+                system_state.update_lights(&elevator_driver);
             }
 
             recv(event_rx) -> event => {
@@ -145,6 +146,7 @@ fn main() {
 
                     Err(_) => println!("Error"),
                 }
+                system_state.update_lights(&elevator_driver);
                 state_to_broadcast_tx.send(system_state.clone()).unwrap();
             }
         }

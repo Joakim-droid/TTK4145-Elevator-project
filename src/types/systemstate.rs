@@ -2,6 +2,7 @@ use crate::types::direction::{self, Direction};
 use crate::types::elevator::ElevatorState;
 use crate::{config::NUM_FLOORS, types::orders::OrderType};
 use core::fmt;
+use driver_rust::elevio::elev::Elevator;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -84,6 +85,31 @@ impl SystemState {
                 self.set_hall_order(false, floor, OrderType::HallUp);
                 self.set_hall_order(false, floor, OrderType::HallDown);
             }
+        }
+    }
+
+    pub fn update_lights(&mut self, driver: &Elevator) {
+        for floor in 0..NUM_FLOORS {
+            driver.call_button_light(
+                floor as u8,
+                OrderType::HallUp.into(),
+                self.hall_requests[floor][0],
+            );
+
+            driver.call_button_light(
+                floor as u8,
+                OrderType::HallDown.into(),
+                self.hall_requests[floor][1],
+            );
+        }
+
+        let local_state = self.get_my_state();
+        for floor in 0..NUM_FLOORS {
+            driver.call_button_light(
+                floor as u8,
+                OrderType::Cab.into(),
+                local_state.get_cab_request(floor as u8),
+            );
         }
     }
 

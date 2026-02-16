@@ -48,7 +48,9 @@ impl ElevatorState {
 
         self.cab_requests[floor as usize] = true;
     }
-
+    pub fn get_cab_request(&self, floor: u8) -> bool {
+        self.cab_requests[floor as usize]
+    }
     pub fn clear_cab_request(&mut self, floor: u8) {
         if floor >= NUM_FLOORS as u8 {
             println!("Invalid floor cleared");
