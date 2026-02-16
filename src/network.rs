@@ -32,7 +32,7 @@ pub fn spawn_recieve_thread(socket: UdpSocket, peer_data_tx: Sender<SystemState>
         let mut buffer = [0u8; 1024];
         loop {
             match socket.recv_from(&mut buffer) {
-                Ok((amount, source_address)) => {
+                Ok((amount, _source_address)) => {
                     let state_bytes = &buffer[..amount];
 
                     match serde_json::from_slice::<SystemState>(state_bytes) {

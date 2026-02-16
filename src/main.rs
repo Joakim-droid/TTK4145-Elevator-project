@@ -2,7 +2,9 @@ use std::net::UdpSocket;
 
 use crate::{
     config::NUM_FLOORS,
-    hardware::{spawn_button_poller, spawn_floor_poller, spawn_obstruction_poller},
+    hardware::{
+        spawn_button_poller, spawn_floor_poller, spawn_obstruction_poller, spawn_stop_button_poller,
+    },
     network::{spawn_peer_discovery, spawn_recieve_thread, spawn_send_thread},
     types::{event::Event, systemstate::SystemState},
 };
@@ -28,6 +30,7 @@ fn main() {
     spawn_floor_poller(&elevator_driver, event_tx.clone());
     spawn_button_poller(&elevator_driver, event_tx.clone());
     spawn_obstruction_poller(&elevator_driver, event_tx.clone());
+    spawn_stop_button_poller(&elevator_driver, event_tx.clone());
 
     let (state_to_broadcast_tx, state_to_broadcast_rx) = cbc::unbounded::<SystemState>();
     let (peer_state_tx, peer_state_rx) = cbc::unbounded::<SystemState>();
@@ -40,7 +43,6 @@ fn main() {
 
     spawn_recieve_thread(socket, peer_state_tx);
     spawn_send_thread(send_socket, state_to_broadcast_rx, external_port);
-
     spawn_peer_discovery(elevator_address.clone(), event_tx.clone());
 
     loop {
@@ -54,11 +56,12 @@ fn main() {
 
                     fsm::step(
                         &elevator_driver,
-                        system_state.get_my_state().unwrap(),
+                        &mut system_state,
                         order_floor,
                         event_tx.clone()
                     );
                 }
+                system_state.update_lights(&elevator_driver);
             }
 
             recv(event_rx) -> event => {
@@ -70,8 +73,7 @@ fn main() {
 
                         fsm::step(
                             &elevator_driver,
-                            // FIXME: Might need to check instead of unwrap
-                            system_state.get_my_state().unwrap(),
+                            &mut system_state,
                             order_floor,
                             event_tx.clone()
                         );
@@ -85,7 +87,7 @@ fn main() {
 
                         fsm::step(
                             &elevator_driver,
-                            system_state.get_my_state().unwrap(),
+                            &mut system_state,
                             next_order,
                             event_tx.clone()
                         );
@@ -103,7 +105,7 @@ fn main() {
                     },
 
                     Ok(Event::DoorOpenTimeOut(timer_id)) => {
-                        let my_state = system_state.get_my_state().unwrap();
+                        let my_state = system_state.get_my_state();
 
 
                         if my_state.get_current_timer_id() == timer_id {
@@ -111,26 +113,41 @@ fn main() {
                             my_state.close_door();
                             let next_order = assigner::decide_next_order(&system_state);
 
-                            fsm::step(&elevator_driver, system_state.get_my_state().unwrap(), next_order, event_tx.clone());
+                            fsm::step(&elevator_driver, &mut system_state, next_order, event_tx.clone());
                         } else {
                             println!("Ignored stale timer event (ID: {})", timer_id);
                         }
                     },
 
                     Ok(Event::Obstructed(obstructed)) => {
-                        let my_state = system_state.get_my_state().unwrap();
+                        let my_state = system_state.get_my_state();
+                        my_state.set_obstruction(obstructed);
 
                         fsm::step(
                             &elevator_driver,
-                            my_state,
+                            &mut system_state,
                             None,
                             event_tx.clone()
                         );
                     },
 
+                    Ok(Event::EmergencyStop(is_stopped)) => {
+                        let my_state = system_state.get_my_state();
+                        my_state.set_emergency_stop(is_stopped);
+                        elevator_driver.stop_button_light(is_stopped);
+
+                        fsm::step(
+                            &elevator_driver,
+                            &mut system_state,
+                            None,
+                            event_tx.clone()
+                        );
+                    }
+
                     Err(_) => println!("Error"),
                 }
-                // state_to_broadcast_tx.send(system_state.clone()).unwrap();
+                system_state.update_lights(&elevator_driver);
+                state_to_broadcast_tx.send(system_state.clone()).unwrap();
             }
         }
     }

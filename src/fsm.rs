@@ -1,10 +1,6 @@
 use crate::{
     config::DOOR_OPEN_DURATION,
-    types::{
-        direction::Direction,
-        elevator::{Behaviour, ElevatorState},
-        event::Event,
-    },
+    types::{direction::Direction, elevator::Behaviour, event::Event, systemstate::SystemState},
 };
 use crossbeam_channel::Sender;
 use driver_rust::elevio::elev::Elevator;
@@ -27,19 +23,36 @@ fn spawn_door_timer(timer_id: u64, event_tx: Sender<Event>) {
 /// Executes the necessary actions to serve the goal
 pub fn step(
     elevator_driver: &Elevator,
-    elevator_state: &mut ElevatorState,
+    system_state: &mut SystemState,
     goal: Option<u8>,
     event_tx: Sender<Event>,
 ) {
+    let local_elevator_state = system_state.get_my_state();
+
     if goal.is_none() {
         elevator_driver.motor_direction(Direction::Stop.into());
-        elevator_state.stop();
+        local_elevator_state.stop();
         return;
     }
 
-    match elevator_state.get_behavior() {
+    if local_elevator_state.is_obstructed() {
+        if local_elevator_state.get_behavior() == Behaviour::Moving {
+            elevator_driver.motor_direction(Direction::Stop.into());
+            local_elevator_state.stop();
+        }
+        // TODO: Maybe reset timer here or in main
+        return;
+    }
+
+    if local_elevator_state.is_emergency_stop() {
+        elevator_driver.motor_direction(Direction::Stop.into());
+        local_elevator_state.stop();
+        return;
+    }
+
+    match local_elevator_state.get_behavior() {
         Behaviour::Idle => {
-            let current_floor = elevator_state.get_floor();
+            let current_floor = local_elevator_state.get_floor();
 
             if current_floor.is_none() || goal.is_none() {
                 // TODO: Maybe handle this error
@@ -51,39 +64,51 @@ pub fn step(
             let goal_floor = goal.unwrap();
 
             if current_floor == goal_floor
-                && let Some(timer_id) = elevator_state.open_door()
+                && let Some(timer_id) = local_elevator_state.open_door()
             {
                 elevator_driver.door_light(true);
                 spawn_door_timer(timer_id, event_tx.clone());
+                // TODO: Clear orders at this floor,
+                system_state.clear_order(current_floor);
             } else {
                 let direction = find_direction(current_floor, goal_floor);
 
                 elevator_driver.motor_direction(direction.into());
-                elevator_state.set_direction(direction);
+                local_elevator_state.set_direction(direction);
             }
         }
 
         Behaviour::Moving => {
-            let current_floor = elevator_state.get_floor();
+            let current_floor = local_elevator_state.get_floor();
 
-            if current_floor.is_some() && goal.is_none() {
+            if current_floor.is_none() {
+                return;
+            }
+
+            let current_floor = current_floor.unwrap();
+
+            if goal.is_none() {
                 // No orders to serve
-                elevator_state.stop();
+                local_elevator_state.stop();
                 elevator_driver.motor_direction(Direction::Stop.into());
                 return;
             }
 
-            if Some(current_floor) == Some(goal)
-                && let Some(timer_id) = elevator_state.open_door()
+            let goal = goal.unwrap();
+
+            if current_floor == goal
+                && let Some(timer_id) = local_elevator_state.open_door()
             {
                 elevator_driver.door_light(true);
                 elevator_driver.motor_direction(Direction::Stop.into());
                 spawn_door_timer(timer_id, event_tx.clone());
+                // TODO: Clear orders at this floor
+                system_state.clear_order(current_floor);
             }
         }
 
         Behaviour::DoorOpen => {
-            let current_floor = elevator_state.get_floor();
+            let current_floor = local_elevator_state.get_floor();
 
             if current_floor.is_none() {
                 eprintln!(
@@ -107,9 +132,10 @@ pub fn step(
             }
 
             // Resets timer if a button on the current floor is pressed while the door is open
-            if let Some(timer_id) = elevator_state.open_door() {
+            if let Some(timer_id) = local_elevator_state.open_door() {
                 elevator_driver.door_light(true);
                 spawn_door_timer(timer_id, event_tx.clone());
+                system_state.clear_order(current_floor);
             }
         }
     }

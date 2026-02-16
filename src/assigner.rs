@@ -12,7 +12,7 @@ fn time_to_serve_request(e: &ElevatorState, req_floor: u8) -> u32 {
 }
 
 pub fn decide_next_order(system_state: &SystemState) -> Option<u8> {
-    let my_id = &system_state.my_id;
+    let my_id = system_state.get_my_id();
 
     None
 }
