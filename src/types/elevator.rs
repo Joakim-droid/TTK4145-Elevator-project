@@ -4,16 +4,22 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub enum Behaviour {
     #[default]
+    #[serde(rename = "idle")]
     Idle,
+    #[serde(rename = "moving")]
     Moving,
+    #[serde(rename = "doorOpen")]
     DoorOpen,
 }
+
+
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ElevatorState {
     floor: Option<u8>,
     behaviour: Behaviour,
     direction: Direction,
+    #[serde(rename = "cabRequests")]
     cab_requests: [bool; NUM_FLOORS],
     obstruction: bool,
     emergency_stop: bool,

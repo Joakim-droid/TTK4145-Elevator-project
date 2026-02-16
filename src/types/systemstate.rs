@@ -9,7 +9,9 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SystemState {
     my_id: String,
+    #[serde(rename = "states")] // for hall_request_assigner
     elevators: HashMap<String, ElevatorState>,
+    #[serde(rename = "hallRequests")]
     hall_requests: [[bool; 2]; NUM_FLOORS],
     hall_epoch: [[u64; 2]; NUM_FLOORS],
 }

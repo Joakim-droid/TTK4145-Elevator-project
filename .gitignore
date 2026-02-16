@@ -1,1 +1,3 @@
 /target
+execs/SimElevatorServer
+execs/hall_request_assigner

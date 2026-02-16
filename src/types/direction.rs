@@ -4,8 +4,11 @@ use serde::{Deserialize, Serialize};
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Direction {
+    #[serde(rename = "up")]
     Up = DIRN_UP,
+    #[serde(rename = "down")]
     Down = DIRN_DOWN,
+    #[serde(rename = "stop")]
     Stop = DIRN_STOP,
 }
 
