@@ -50,9 +50,17 @@ pub fn decide_next_order(system_state: &SystemState) -> Option<u8> {
                     }
                 }
             }
-
-
-        } 
-        return Some(assigned_hall_requests)
+            // map floor and direction info into u8
+            assigned_hall_requests.iter().enumerate().find_map(|(floor, pair)| {
+                match pair.as_slice() {
+                    [true, _] => Some((floor * 2) as u8),        // up
+                    [_, true] => Some((floor * 2 + 1) as u8),    // down
+                    _ => None,
+                }
+            })
+        } else {
+            eprint!("Error executing hall_request_assigner");
+            std::process::exit(1);
+        }
 
 }
