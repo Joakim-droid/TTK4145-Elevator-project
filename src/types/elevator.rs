@@ -1,19 +1,49 @@
 use crate::{config::NUM_FLOORS, types::direction::Direction};
+use std::time::SystemTime;
+
+use driver_rust::elevio::elev::DIRN_DOWN;
+use driver_rust::elevio::elev::DIRN_STOP;
+use driver_rust::elevio::elev::DIRN_UP;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub enum Behaviour {
     #[default]
+    #[serde(rename = "idle")]
     Idle,
+    #[serde(rename = "moving")]
     Moving,
+    #[serde(rename = "doorOpen")]
     DoorOpen,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum Direction {
+    #[serde(rename = "up")]
+    Up,
+    #[serde(rename = "down")]
+    Down,
+    #[serde(rename = "stop")]
+    Stop,
+}
+
+impl Direction {
+    pub fn to_u8(&self) -> u8 {
+        match *self {
+            Direction::Up => DIRN_UP,
+            Direction::Down => DIRN_DOWN,
+            Direction::Stop => DIRN_STOP,
+        }
+    }
+}
+
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ElevatorState {
     floor: Option<u8>,
     behaviour: Behaviour,
     direction: Direction,
+    #[serde(rename = "cabRequests")]
     cab_requests: [bool; NUM_FLOORS],
     obstruction: bool,
     emergency_stop: bool,

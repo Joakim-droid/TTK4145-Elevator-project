@@ -4,6 +4,7 @@ use crate::{
 };
 use crossbeam_channel::Sender;
 use driver_rust::elevio::elev::Elevator;
+use std::time::Duration;
 
 fn find_direction(current_floor: u8, goal_floor: u8) -> Direction {
     if goal_floor > current_floor {

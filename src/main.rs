@@ -95,7 +95,7 @@ fn main() {
 
                     Ok(Event::PeerUpdate(update)) => {
                         let current_peers = update.peers;
-
+                        // TODO: what is needed for the assigner
                         // Can maybe be done in the recieved state merge function
                         for _ in current_peers {
                             // remove or add peers to systemstate
