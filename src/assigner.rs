@@ -1,6 +1,6 @@
 use crate::{
     config::NUM_FLOORS,
-    types::{elevator::ElevatorState, orders::OrderType, systemstate::SystemState},
+    types::{orders::OrderType, systemstate::SystemState},
 };
 use std::collections::HashMap;
 use std::process::Command;
@@ -38,10 +38,10 @@ pub fn decide_next_order(system_state: &SystemState) -> Option<u8> {
         for (id, hall_requests) in hall_request_assigner_output_value.iter() {
             if id == &system_state_clone.get_my_id() {
                 for floor in 0..NUM_FLOORS {
-                    assigned_hall_requests[floor as usize][OrderType::HallUp as usize] =
-                        hall_requests[floor as usize][OrderType::HallUp as usize];
-                    assigned_hall_requests[floor as usize][OrderType::HallDown as usize] =
-                        hall_requests[floor as usize][OrderType::HallDown as usize];
+                    assigned_hall_requests[floor][OrderType::HallUp as usize] =
+                        hall_requests[floor][OrderType::HallUp as usize];
+                    assigned_hall_requests[floor][OrderType::HallDown as usize] =
+                        hall_requests[floor][OrderType::HallDown as usize];
                 }
             }
         }
