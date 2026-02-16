@@ -1,11 +1,6 @@
 use crate::{
     config::DOOR_OPEN_DURATION,
-    types::{
-        direction::Direction,
-        elevator::{Behaviour, ElevatorState},
-        event::Event,
-        systemstate::SystemState,
-    },
+    types::{direction::Direction, elevator::Behaviour, event::Event, systemstate::SystemState},
 };
 use crossbeam_channel::Sender;
 use driver_rust::elevio::elev::Elevator;

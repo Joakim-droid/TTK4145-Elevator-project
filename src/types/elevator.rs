@@ -15,17 +15,21 @@ pub struct ElevatorState {
     behaviour: Behaviour,
     direction: Direction,
     cab_requests: [bool; NUM_FLOORS],
-    door_open: bool,
     obstruction: bool,
     emergency_stop: bool,
-    // Keeps track of the active door timer
     door_open_counter: u64,
+    seq: u64,
 }
 
 impl ElevatorState {
+    fn bump_seq(&mut self) {
+        self.seq = self.seq.saturating_add(1);
+    }
+
     pub fn stop(&mut self) {
         self.behaviour = Behaviour::Idle;
         self.direction = Direction::Stop;
+        self.bump_seq();
     }
 
     pub fn get_behavior(&self) -> Behaviour {
@@ -33,7 +37,12 @@ impl ElevatorState {
     }
 
     pub fn set_floor(&mut self, floor: u8) {
+        if (floor as usize) >= NUM_FLOORS {
+            eprint!("Undefined floor ordered: {}", floor);
+            return;
+        }
         self.floor = Some(floor);
+        self.bump_seq();
     }
 
     pub fn get_floor(&self) -> Option<u8> {
@@ -41,24 +50,26 @@ impl ElevatorState {
     }
 
     pub fn add_cab_request(&mut self, floor: u8) {
-        if floor >= NUM_FLOORS as u8 {
-            println!("Invalid floor requested");
+        if (floor as usize) >= NUM_FLOORS {
+            eprint!("Undefined floor ordered: {}", floor);
             return;
         }
-
         self.cab_requests[floor as usize] = true;
+        self.bump_seq();
     }
-    pub fn get_cab_request(&self, floor: u8) -> bool {
-        self.cab_requests[floor as usize]
-    }
+
     pub fn clear_cab_request(&mut self, floor: u8) {
-        if floor >= NUM_FLOORS as u8 {
-            println!("Invalid floor cleared");
+        if (floor as usize) >= NUM_FLOORS {
+            eprint!("Undefined floor ordered: {}", floor);
             return;
         }
         self.cab_requests[floor as usize] = false;
+        self.bump_seq();
     }
 
+    pub fn get_cab_request(&self, floor: u8) -> bool {
+        self.cab_requests[floor as usize]
+    }
     pub fn open_door(&mut self) -> Option<u64> {
         if self.floor.is_none() {
             eprintln!("Cant open door in between floors");
@@ -71,7 +82,8 @@ impl ElevatorState {
 
         self.behaviour = Behaviour::DoorOpen;
 
-        self.door_open_counter += 1;
+        self.door_open_counter = self.door_open_counter.saturating_add(1); // TODO: Legg til hjelpefunksjon for ryddighet
+        self.bump_seq();
         Some(self.door_open_counter)
     }
 
@@ -82,6 +94,7 @@ impl ElevatorState {
         }
 
         self.behaviour = Behaviour::Idle;
+        self.bump_seq();
     }
 
     pub fn set_direction(&mut self, direction: Direction) {
@@ -89,10 +102,12 @@ impl ElevatorState {
             self.stop();
         } else if direction == Direction::Up {
             self.direction = Direction::Up;
-            self.behaviour = Behaviour::Moving
+            self.behaviour = Behaviour::Moving;
+            self.bump_seq();
         } else {
             self.direction = Direction::Down;
             self.behaviour = Behaviour::Moving;
+            self.bump_seq();
         }
     }
 
@@ -108,16 +123,23 @@ impl ElevatorState {
         self.obstruction
     }
 
-    pub fn set_obstructed(&mut self, is_obstructed: bool) {
-        self.obstruction = is_obstructed;
-    }
-
     pub fn is_emergency_stop(&self) -> bool {
         self.emergency_stop
     }
 
     pub fn set_emergency_stop(&mut self, is_pressed: bool) {
         self.emergency_stop = is_pressed
+    }
+    
+    pub fn get_seq(&self) -> u64 {
+        self.seq
+    }
+
+    pub fn set_obstruction(&mut self, val: bool) {
+        if self.obstruction != val {
+            self.obstruction = val;
+            self.bump_seq();
+        }
     }
 }
 
@@ -128,10 +150,10 @@ impl Default for ElevatorState {
             behaviour: Behaviour::Idle,
             direction: Direction::Stop,
             cab_requests: [false; NUM_FLOORS],
-            door_open: false,
             door_open_counter: 0,
             obstruction: false,
             emergency_stop: false,
+            seq: 0,
         }
     }
 }

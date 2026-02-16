@@ -121,7 +121,7 @@ fn main() {
 
                     Ok(Event::Obstructed(obstructed)) => {
                         let my_state = system_state.get_my_state();
-                        my_state.set_obstructed(obstructed);
+                        my_state.set_obstruction(obstructed);
 
                         fsm::step(
                             &elevator_driver,
