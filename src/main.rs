@@ -68,6 +68,7 @@ fn main() {
                 match event {
                     Ok(Event::FloorReached(floor)) => {
                         system_state.arrive_at_floor(floor);
+                        elevator_driver.floor_indicator(floor);
 
                         // FIXME: Move this elsewhere
                         let my_state = system_state.get_my_state();
