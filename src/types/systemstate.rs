@@ -71,18 +71,28 @@ impl SystemState {
                 local_state.add_cab_request(floor);
             }
             OrderType::HallUp => {
-                self.bump_hall_epoch(floor as usize, 0);
+                self.bump_hall_epoch(floor as usize, order);
                 self.set_hall_order(true, floor, order);
             }
             OrderType::HallDown => {
-                self.bump_hall_epoch(floor as usize, 1);
+                self.bump_hall_epoch(floor as usize, order);
                 self.set_hall_order(true, floor, order);
             }
         }
     }
 
-    fn bump_hall_epoch(&mut self, floor: usize, dir: usize) {
-        self.hall_epoch[floor][dir] = self.hall_epoch[floor][dir].saturating_add(1);
+    fn bump_hall_epoch(&mut self, floor: usize, order: OrderType) {
+        match order {
+            OrderType::HallUp => {
+                self.hall_epoch[floor][0] = self.hall_epoch[floor][0].saturating_add(1);
+            }
+            OrderType::HallDown => {
+                self.hall_epoch[floor][1] = self.hall_epoch[floor][1].saturating_add(1);
+            }
+            OrderType::Cab => {
+                eprintln!("Error: Cannot bump hall epoch for a Cab order");
+            }
+        }
     }
 
     fn can_clear_order(&self, floor: usize, dir: usize) -> bool {
@@ -117,11 +127,18 @@ impl SystemState {
         let direction = local_state.get_direction();
 
         match direction {
-            Direction::Up => self.set_hall_order(false, floor, OrderType::HallUp),
-            Direction::Down => self.set_hall_order(false, floor, OrderType::HallDown),
-            Direction::Stop => {
-                // FIXME: Read specs and see the specific behavior for when both up and down are pressed in idle elevator
+            Direction::Up => {
+                self.bump_hall_epoch(floor as usize, OrderType::HallUp);
                 self.set_hall_order(false, floor, OrderType::HallUp);
+            }
+            Direction::Down => {
+                self.bump_hall_epoch(floor as usize, OrderType::HallDown);
+                self.set_hall_order(false, floor, OrderType::HallDown);
+            }
+            Direction::Stop => {
+                self.bump_hall_epoch(floor as usize, OrderType::HallUp);
+                self.set_hall_order(false, floor, OrderType::HallUp);
+                self.bump_hall_epoch(floor as usize, OrderType::HallDown);
                 self.set_hall_order(false, floor, OrderType::HallDown);
             }
         }

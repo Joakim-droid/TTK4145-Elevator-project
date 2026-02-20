@@ -12,8 +12,6 @@ pub enum Behaviour {
     DoorOpen,
 }
 
-
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ElevatorState {
     floor: Option<u8>,
@@ -82,10 +80,6 @@ impl ElevatorState {
             return None;
         }
 
-        if self.behaviour == Behaviour::Moving {
-            self.stop();
-        }
-
         self.behaviour = Behaviour::DoorOpen;
 
         self.door_open_counter = self.door_open_counter.saturating_add(1); // TODO: Legg til hjelpefunksjon for ryddighet
@@ -98,7 +92,7 @@ impl ElevatorState {
             eprintln!("Should not call close door if door is not open");
             return;
         }
-        
+
         self.behaviour = Behaviour::Idle;
         self.direction = Direction::Stop;
         self.bump_seq();
@@ -137,7 +131,7 @@ impl ElevatorState {
     pub fn set_emergency_stop(&mut self, is_pressed: bool) {
         self.emergency_stop = is_pressed
     }
-    
+
     pub fn get_seq(&self) -> u64 {
         self.seq
     }
