@@ -53,6 +53,10 @@ impl SystemState {
     pub fn arrive_at_floor(&mut self, floor: u8) {
         let local_state = self.get_my_state();
         local_state.set_floor(floor);
+
+        if floor == 0 || floor == (NUM_FLOORS - 1) as u8 {
+            local_state.stop();
+        }
     }
 
     pub fn add_order(&mut self, floor: u8, order: OrderType) {

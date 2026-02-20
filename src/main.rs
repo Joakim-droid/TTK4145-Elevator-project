@@ -6,7 +6,7 @@ use crate::{
         spawn_button_poller, spawn_floor_poller, spawn_obstruction_poller, spawn_stop_button_poller,
     },
     network::{spawn_peer_discovery, spawn_recieve_thread, spawn_send_thread},
-    types::{event::Event, systemstate::SystemState},
+    types::{direction::Direction, elevator::Behaviour, event::Event, systemstate::SystemState},
 };
 use crossbeam_channel::{self as cbc, select};
 use driver_rust::elevio::elev::Elevator;
@@ -68,6 +68,12 @@ fn main() {
                 match event {
                     Ok(Event::FloorReached(floor)) => {
                         system_state.arrive_at_floor(floor);
+
+                        // FIXME: Move this elsewhere
+                        let my_state = system_state.get_my_state();
+                        if my_state.get_behavior() == Behaviour::Idle {
+                            elevator_driver.motor_direction(Direction::Stop.into());
+                        }
 
                         let order_floor = assigner::decide_next_order(&system_state);
 

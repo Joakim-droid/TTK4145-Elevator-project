@@ -98,8 +98,9 @@ impl ElevatorState {
             eprintln!("Should not call close door if door is not open");
             return;
         }
-
+        
         self.behaviour = Behaviour::Idle;
+        self.direction = Direction::Stop;
         self.bump_seq();
     }
 

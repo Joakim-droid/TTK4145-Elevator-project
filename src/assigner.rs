@@ -14,6 +14,7 @@ pub fn decide_next_order(system_state: &SystemState) -> Option<u8> {
         .as_object_mut()
         .unwrap()
         .remove("my_id");
+
     let hall_request_assigner_json =
         serde_json::to_string(&serialized_system_state).expect("Failed to serialize data");
 
@@ -21,6 +22,7 @@ pub fn decide_next_order(system_state: &SystemState) -> Option<u8> {
     let program_out = Command::new("./execs/hall_request_assigner")
         .arg("-i")
         .arg(&hall_request_assigner_json)
+        .arg("--includeCab")
         .output()
         .expect("Failed to execute hall_request_assigner");
 
@@ -35,16 +37,19 @@ pub fn decide_next_order(system_state: &SystemState) -> Option<u8> {
         // just to see what the assigner returned
         println!("{}", hall_request_assigner_output_str);
 
-        for (id, hall_requests) in hall_request_assigner_output_value.iter() {
-            if id == &system_state_clone.get_my_id() {
-                for floor in 0..NUM_FLOORS {
-                    assigned_hall_requests[floor][OrderType::HallUp as usize] =
-                        hall_requests[floor][OrderType::HallUp as usize];
-                    assigned_hall_requests[floor][OrderType::HallDown as usize] =
-                        hall_requests[floor][OrderType::HallDown as usize];
+        let my_id = system_state_clone.get_my_id();
+        if let Some(my_orders) = hall_request_assigner_output_value.get(&my_id) {
+            for (floor, orders) in my_orders.iter().enumerate() {
+                if orders.iter().any(|&active| active) {
+                    return Some(floor as u8);
                 }
             }
         }
+
+        None
+    } else {
+        let error_msg = String::from_utf8_lossy(&program_out.stderr);
+        eprintln!("Error executing hall_request_assigner: {}", error_msg);
+        None
     }
-    None
 }
