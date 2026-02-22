@@ -1,10 +1,33 @@
-use crate::types::{event::Event, orders::OrderType};
+use crate::types::{
+    direction::Direction, event::Event, orders::OrderType, systemstate::SystemState,
+};
 use crossbeam_channel::Sender;
 use driver_rust::elevio::elev::Elevator;
 use std::{
     thread::{self, sleep},
     time::Duration,
 };
+
+pub fn initialize_elevator_position(elevator: &Elevator, system_state: &mut SystemState) {
+    if let Some(floor) = elevator.floor_sensor() {
+        elevator.motor_direction(Direction::Stop.into());
+        elevator.floor_indicator(floor);
+        system_state.arrive_at_floor(floor);
+        return;
+    }
+
+    elevator.motor_direction(Direction::Down.into());
+
+    loop {
+        if let Some(floor) = elevator.floor_sensor() {
+            elevator.motor_direction(Direction::Stop.into());
+            elevator.floor_indicator(floor);
+            system_state.arrive_at_floor(floor);
+            return;
+        }
+        sleep(Duration::from_millis(20));
+    }
+}
 
 pub fn spawn_button_poller(elevator: &Elevator, channel_sender: Sender<Event>) {
     let elevator_handler = elevator.clone();

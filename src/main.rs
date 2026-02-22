@@ -3,7 +3,8 @@ use std::net::UdpSocket;
 use crate::{
     config::NUM_FLOORS,
     hardware::{
-        spawn_button_poller, spawn_floor_poller, spawn_obstruction_poller, spawn_stop_button_poller,
+        initialize_elevator_position, spawn_button_poller, spawn_floor_poller,
+        spawn_obstruction_poller, spawn_stop_button_poller,
     },
     network::{spawn_peer_discovery, spawn_recieve_thread, spawn_send_thread},
     types::{direction::Direction, elevator::Behaviour, event::Event, systemstate::SystemState},
@@ -17,13 +18,50 @@ mod hardware;
 mod network;
 mod types;
 
+fn parse_u16_arg(args: &[String], index: usize, default: u16, name: &str) -> u16 {
+    match args.get(index) {
+        Some(value) => value.parse::<u16>().unwrap_or_else(|_| {
+            eprintln!("Invalid {} '{}', expected u16", name, value);
+            std::process::exit(2);
+        }),
+        None => default,
+    }
+}
+
+fn print_usage(program: &str) {
+    println!(
+        "Usage:
+  {program} [sim_port] [internal_port] [external_port]
+
+Defaults:
+  sim_port      = 15658
+  internal_port = 5001
+  external_port = 5000"
+    );
+}
+
 fn main() {
-    let elevator_address = "localhost:15658".to_string();
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
+        print_usage(&args[0]);
+        return;
+    }
+
+    let sim_port = parse_u16_arg(&args, 1, 15658, "sim_port");
+    let internal_port = parse_u16_arg(&args, 2, 5001, "internal_port");
+    let external_port = parse_u16_arg(&args, 3, 5000, "external_port");
+    let elevator_address = format!("localhost:{}", sim_port);
+
+    println!(
+        "Starting node on {} (internal_port={}, external_port={})",
+        elevator_address, internal_port, external_port
+    );
 
     let elevator_driver =
         Elevator::init(&elevator_address, NUM_FLOORS as u8).expect("Error connecting to Elevator");
 
     let mut system_state = SystemState::new(&elevator_address);
+    initialize_elevator_position(&elevator_driver, &mut system_state);
 
     let (event_tx, event_rx) = cbc::unbounded::<Event>();
 
@@ -35,10 +73,7 @@ fn main() {
     let (state_to_broadcast_tx, state_to_broadcast_rx) = cbc::unbounded::<SystemState>();
     let (peer_state_tx, peer_state_rx) = cbc::unbounded::<SystemState>();
 
-    let internal_port = 5001;
-    let external_port = 5000;
-
-    let socket = UdpSocket::bind(format!("0.0.0.0:{}", internal_port)).expect("Failed to bind");
+    let socket = UdpSocket::bind(format!("127.0.0.1:{}", internal_port)).expect("Failed to bind");
     let send_socket = socket.try_clone().unwrap();
 
     spawn_recieve_thread(socket, peer_state_tx);
