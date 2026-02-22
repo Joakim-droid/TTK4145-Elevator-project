@@ -1,3 +1,10 @@
 /target
 execs/SimElevatorServer
 execs/hall_request_assigner
+.DS_Store
+LICENSE
+SimElevatorServer
+simulator.con
+SimElevatorServer.o
+sim_server.d
+timer_event.d

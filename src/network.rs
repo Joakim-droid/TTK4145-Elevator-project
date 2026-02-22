@@ -11,7 +11,7 @@ pub fn spawn_send_thread(socket: UdpSocket, data_rx: Receiver<SystemState>, exte
     println!("Send thread spawned");
 
     thread::spawn(move || {
-        let ip_addr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
+        let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 0));
         let external_socket_addr = SocketAddr::new(ip_addr, external_port);
 
         loop {
