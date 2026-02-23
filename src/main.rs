@@ -18,6 +18,8 @@ mod hardware;
 mod network;
 mod types;
 
+
+// TODO: abstraktere parse, print, og oppstart i main til passende modul. En 'utils' eller oppstart-modul kanskje?
 fn parse_u16_arg(args: &[String], index: usize, default: u16, name: &str) -> u16 {
     match args.get(index) {
         Some(value) => value.parse::<u16>().unwrap_or_else(|_| {
