@@ -138,14 +138,22 @@ fn main() {
                     },
 
                     Ok(Event::PeerUpdate(update)) => {
-                        let current_peers = update.peers;
-                        // TODO: what is needed for the assigner
-                        // Can maybe be done in the recieved state merge function
-                        for _ in current_peers {
-                            // remove or add peers to systemstate
-                            // Mark as dead or alive
+                        if let Some(id) = &update.new {
+                            system_state.peer_new(id);
+                        }
 
-                        };
+                        for id in &update.lost {
+                            println!("Elevator dead: {}", id);
+                            system_state.peer_lost(id);
+                        }
+
+                        let next_order = assigner::decide_next_order(&system_state);
+                        fsm::step(
+                            &elevator_driver,
+                            &mut system_state,
+                            next_order,
+                            event_tx.clone()
+                        );
                     },
 
                     Ok(Event::DoorOpenTimeOut(timer_id)) => {

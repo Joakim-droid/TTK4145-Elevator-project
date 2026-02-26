@@ -4,7 +4,7 @@ use crate::{config::NUM_FLOORS, types::orders::OrderType};
 use core::fmt;
 use driver_rust::elevio::elev::Elevator;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SystemState {
@@ -14,6 +14,8 @@ pub struct SystemState {
     #[serde(rename = "hallRequests")]
     hall_requests: [[bool; 2]; NUM_FLOORS],
     hall_epoch: [[u64; 2]; NUM_FLOORS],
+    #[serde(skip)]
+    dead_elevators: HashSet<String>,
 }
 
 impl SystemState {
@@ -26,6 +28,7 @@ impl SystemState {
             elevators,
             hall_requests: [[false; 2]; NUM_FLOORS],
             hall_epoch: [[0; 2]; NUM_FLOORS],
+            dead_elevators: HashSet::new(),
         }
     }
 
@@ -38,6 +41,23 @@ impl SystemState {
 
     pub fn get_my_id(&self) -> String {
         self.my_id.clone()
+    }
+
+    pub fn peer_lost(&mut self, id: &str) {
+        if id == self.my_id {
+            return;
+        }
+        self.elevators.remove(id);
+        self.dead_elevators.insert(id.to_owned());
+    }
+
+    pub fn peer_new(&mut self, id: &str) {
+        if id == self.my_id {
+            return;
+        }
+        self.dead_elevators.remove(id);
+        // Drop stale snapshot.
+        self.elevators.remove(id);
     }
 
     fn set_hall_order(&mut self, arrive: bool, floor: u8, order: OrderType) {
@@ -172,6 +192,10 @@ impl SystemState {
     pub fn merge_with(&mut self, other: &SystemState) {
         // Merge elevator states by sequence number.
         for (id, other_state) in &other.elevators {
+            if self.dead_elevators.contains(id) {
+                continue;
+            }
+
             match self.elevators.get(id) {
                 None => {
                     // We don't have this elevator, take it.
