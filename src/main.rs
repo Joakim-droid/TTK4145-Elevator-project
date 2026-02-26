@@ -43,6 +43,13 @@ Defaults:
 }
 
 fn main() {
+    // If any worker thread panics (e.g. simulator disconnect), terminate the whole node.
+    // Otherwise peer heartbeat can stay alive and prevent dead-elevator takeover.
+    std::panic::set_hook(Box::new(|panic_info| {
+        eprintln!("Fatal panic, shutting down node: {}", panic_info);
+        std::process::exit(1);
+    }));
+
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         print_usage(&args[0]);
