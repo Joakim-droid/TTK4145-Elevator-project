@@ -1,4 +1,4 @@
-use crate::config::PEER_DISCOVERY_BCAST_PORT;
+use crate::config::SYSTEMSTATE_BROADCAST_PORT;
 
 fn print_usage(program: &str) {
     println!(
@@ -43,7 +43,7 @@ pub fn parse() -> (std::string::String, u16, u16) {
     }
 
     let sim_port = parse_u16_arg(&args, 2, 15658, "sim_port");
-    let bcast_port = parse_u16_arg(&args, 3, PEER_DISCOVERY_BCAST_PORT, "bcast_port");
+    let bcast_port = parse_u16_arg(&args, 3, SYSTEMSTATE_BROADCAST_PORT, "bcast_port");
 
     let my_id = args
         .get(1)
