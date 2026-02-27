@@ -1,69 +1,53 @@
 use crate::types::{event::Event, systemstate::SystemState};
 use crossbeam_channel::{self as cbc, Receiver, Sender};
-use network_rust::udpnet;
+use network_rust::udpnet::{self, bcast};
 use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
     thread::{self, sleep},
     time::Duration,
 };
 
-pub fn spawn_send_thread(socket: UdpSocket, data_rx: Receiver<SystemState>, external_port: u16) {
-    println!("Send thread spawned");
+pub fn spawn_state_broadcast(
+    my_id: String,
+    port: u16,
+    state_rx: Receiver<SystemState>,
+    peer_state_tx: Sender<SystemState>,
+) {
+    println!("State broadcast spawned on port {}", port);
 
+    let state_rx_clone = state_rx.clone();
     thread::spawn(move || {
-        let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        let external_socket_addr = SocketAddr::new(ip_addr, external_port);
-
-        loop {
-            if let Ok(update) = data_rx.recv() {
-                let bytes = serde_json::to_vec(&update).unwrap();
-                socket.send_to(&bytes, external_socket_addr).unwrap();
-            }
-
-            // sleep(Duration::from_millis(500));
-        }
+        bcast::tx(port, state_rx_clone).ok();
     });
-}
-
-pub fn spawn_recieve_thread(socket: UdpSocket, peer_data_tx: Sender<SystemState>) {
-    println!("Recieve thread spawned");
 
     thread::spawn(move || {
-        let mut buffer = [0u8; 1024];
-        loop {
-            match socket.recv_from(&mut buffer) {
-                Ok((amount, _source_address)) => {
-                    let state_bytes = &buffer[..amount];
+        let (network_state_tx, network_state_rx) = cbc::unbounded::<SystemState>();
+        thread::spawn(move || {
+            bcast::rx(port, network_state_tx).ok();
+        });
 
-                    match serde_json::from_slice::<SystemState>(state_bytes) {
-                        Ok(state) => {
-                            peer_data_tx
-                                .send(state)
-                                .expect("Failed to send serialized state");
-                        }
-                        Err(e) => println!("{}", e),
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Recieve error: {}", e);
-                    break;
+        loop {
+            if let Ok(state) = network_state_rx.recv() {
+                // Ignore our own state
+                if state.get_my_id() != my_id {
+                    peer_state_tx.send(state).ok();
                 }
             }
         }
     });
 }
 
-pub fn spawn_peer_discovery(my_id: String, event_tx: Sender<Event>) {
+pub fn spawn_peer_discovery(my_id: String, event_tx: Sender<Event>, port: u16) {
+    println!("Peer discovery spawned on port {}", port);
     thread::spawn(move || {
-        let (peer_tx, peer_rx) = cbc::unbounded();
+        let (peer_tx, peer_rx) = cbc::unbounded::<udpnet::peers::PeerUpdate>();
 
         thread::spawn(move || {
             let enable_tx = cbc::never();
-            udpnet::peers::tx(16658, my_id, enable_tx).ok();
+            udpnet::peers::tx(port, my_id, enable_tx).ok();
         });
 
         thread::spawn(move || {
-            udpnet::peers::rx(16658, peer_tx).ok();
+            udpnet::peers::rx(port, peer_tx).ok();
         });
 
         loop {

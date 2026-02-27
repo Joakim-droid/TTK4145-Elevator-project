@@ -1,12 +1,10 @@
-use std::net::UdpSocket;
-
 use crate::{
-    config::NUM_FLOORS,
+    config::{NUM_FLOORS, PEER_DISCOVERY_BCAST_PORT},
     hardware::{
         initialize_elevator_position, spawn_button_poller, spawn_floor_poller,
         spawn_obstruction_poller, spawn_stop_button_poller,
     },
-    network::{spawn_peer_discovery, spawn_recieve_thread, spawn_send_thread},
+    network::{spawn_peer_discovery, spawn_state_broadcast},
     types::{direction::Direction, elevator::Behaviour, event::Event, systemstate::SystemState},
 };
 use crossbeam_channel::{self as cbc, select};
@@ -16,31 +14,8 @@ mod config;
 mod fsm;
 mod hardware;
 mod network;
+mod parser;
 mod types;
-
-
-// TODO: abstraktere parse, print, og oppstart i main til passende modul. En 'utils' eller oppstart-modul kanskje?
-fn parse_u16_arg(args: &[String], index: usize, default: u16, name: &str) -> u16 {
-    match args.get(index) {
-        Some(value) => value.parse::<u16>().unwrap_or_else(|_| {
-            eprintln!("Invalid {} '{}', expected u16", name, value);
-            std::process::exit(2);
-        }),
-        None => default,
-    }
-}
-
-fn print_usage(program: &str) {
-    println!(
-        "Usage:
-  {program} [sim_port] [internal_port] [external_port]
-
-Defaults:
-  sim_port      = 15658
-  internal_port = 5001
-  external_port = 5000"
-    );
-}
 
 fn main() {
     // If any worker thread panics (e.g. simulator disconnect), terminate the whole node.
@@ -50,44 +25,35 @@ fn main() {
         std::process::exit(1);
     }));
 
-    let args: Vec<String> = std::env::args().collect();
-    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
-        print_usage(&args[0]);
-        return;
-    }
-
-    let sim_port = parse_u16_arg(&args, 1, 15658, "sim_port");
-    let internal_port = parse_u16_arg(&args, 2, 5001, "internal_port");
-    let external_port = parse_u16_arg(&args, 3, 5000, "external_port");
+    let (my_id, sim_port, bcast_port) = parser::parse();
     let elevator_address = format!("localhost:{}", sim_port);
 
     println!(
-        "Starting node on {} (internal_port={}, external_port={})",
-        elevator_address, internal_port, external_port
+        "Starting elevator '{}' connecting to simulator on {} (broadcast_port={})",
+        my_id, elevator_address, bcast_port
     );
 
     let elevator_driver =
         Elevator::init(&elevator_address, NUM_FLOORS as u8).expect("Error connecting to Elevator");
-
-    let mut system_state = SystemState::new(&elevator_address);
-    initialize_elevator_position(&elevator_driver, &mut system_state);
+    let mut system_state = SystemState::new(&my_id);
 
     let (event_tx, event_rx) = cbc::unbounded::<Event>();
+    let (state_to_broadcast_tx, state_to_broadcast_rx) = cbc::unbounded::<SystemState>();
+    let (peer_state_tx, peer_state_rx) = cbc::unbounded::<SystemState>();
+
+    initialize_elevator_position(&elevator_driver, &mut system_state);
 
     spawn_floor_poller(&elevator_driver, event_tx.clone());
     spawn_button_poller(&elevator_driver, event_tx.clone());
     spawn_obstruction_poller(&elevator_driver, event_tx.clone());
     spawn_stop_button_poller(&elevator_driver, event_tx.clone());
-
-    let (state_to_broadcast_tx, state_to_broadcast_rx) = cbc::unbounded::<SystemState>();
-    let (peer_state_tx, peer_state_rx) = cbc::unbounded::<SystemState>();
-
-    let socket = UdpSocket::bind(format!("127.0.0.1:{}", internal_port)).expect("Failed to bind");
-    let send_socket = socket.try_clone().unwrap();
-
-    spawn_recieve_thread(socket, peer_state_tx);
-    spawn_send_thread(send_socket, state_to_broadcast_rx, external_port);
-    spawn_peer_discovery(elevator_address.clone(), event_tx.clone());
+    spawn_peer_discovery(my_id.clone(), event_tx.clone(), PEER_DISCOVERY_BCAST_PORT);
+    spawn_state_broadcast(
+        my_id.clone(),
+        bcast_port,
+        state_to_broadcast_rx,
+        peer_state_tx,
+    );
 
     loop {
         select! {
@@ -202,8 +168,7 @@ fn main() {
                             event_tx.clone()
                         );
                     }
-
-                    Err(_) => println!("Error"),
+                    Err(_) => println!("Error in event loop"),
                 }
                 system_state.update_lights(&elevator_driver);
                 state_to_broadcast_tx.send(system_state.clone()).unwrap();
