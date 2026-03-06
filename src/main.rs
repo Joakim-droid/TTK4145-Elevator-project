@@ -113,21 +113,49 @@ fn main() {
                     Ok(Event::DoorOpenTimeOut(timer_id)) => {
                         let my_state = system_state.get_my_state();
 
+                        // If obstructed, ignore timeout
+                        if my_state.is_obstructed() {
+                            if my_state.get_current_timer_id() == timer_id {
+                                if let Some(new_id) = my_state.open_door() {
+                                    elevator_driver.door_light(true);
+                                    fsm::spawn_door_timer(new_id, event_tx.clone());
+                                }
+                            }
+                            return;
+                        }
 
                         if my_state.get_current_timer_id() == timer_id {
                             elevator_driver.door_light(false);
                             my_state.close_door();
-                            let next_order = assigner::decide_next_order(&system_state);
 
-                            fsm::step(&elevator_driver, &mut system_state, next_order, event_tx.clone());
+                            let next_order = assigner::decide_next_order(&system_state);
+                            fsm::step(
+                                &elevator_driver, 
+                                &mut system_state, 
+                                next_order, 
+                                event_tx.clone()
+                            );
                         } else {
                             println!("Ignored stale timer event (ID: {})", timer_id);
                         }
+
                     },
 
                     Ok(Event::Obstructed(obstructed)) => {
                         let my_state = system_state.get_my_state();
                         my_state.set_obstruction(obstructed);
+
+                        if obstructed {
+                            // Keep door open and invalidate any pending timeout
+                            if let Some(new_id) = my_state.open_door() {
+                                elevator_driver.door_light(true);
+                            }
+                        } else {
+                            if let Some(new_id) = my_state.open_door() {
+                                elevator_driver.door_light(true);
+                                fsm::spawn_door_timer(new_id, event_tx.clone());
+                            }
+                        }
 
                         fsm::step(
                             &elevator_driver,
