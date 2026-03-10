@@ -8,3 +8,10 @@ simulator.con
 SimElevatorServer.o
 sim_server.d
 timer_event.d
+
+
+*.log
+__pycache__/*
+*.pyc
+*.pyo
+*.pyd

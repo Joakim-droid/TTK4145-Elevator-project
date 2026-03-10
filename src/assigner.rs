@@ -1,13 +1,16 @@
-use crate::{
-    config::NUM_FLOORS,
-    types::{orders::OrderType, systemstate::SystemState},
-};
+use crate::types::systemstate::SystemState;
 use std::collections::HashMap;
 use std::process::Command;
 
 pub fn decide_next_order(system_state: &SystemState) -> Option<u8> {
     // Serialize data
-    let system_state_clone = system_state.clone();
+    let mut system_state_clone = system_state.clone();
+
+    let dead_peers = system_state.get_dead_elevators().clone();
+    for dead_id in dead_peers {
+        system_state_clone.remove_elevator_record(&dead_id);
+    }
+
     let mut serialized_system_state = serde_json::to_value(&system_state_clone).unwrap();
 
     serialized_system_state
@@ -26,7 +29,6 @@ pub fn decide_next_order(system_state: &SystemState) -> Option<u8> {
         .output()
         .expect("Failed to execute hall_request_assigner");
 
-    let mut assigned_hall_requests = vec![vec![false; 2]; NUM_FLOORS];
     if program_out.status.success() {
         let hall_request_assigner_output_str =
             String::from_utf8(program_out.stdout).expect("Invalid UTF-8 hra_output");
@@ -35,7 +37,7 @@ pub fn decide_next_order(system_state: &SystemState) -> Option<u8> {
         >(&hall_request_assigner_output_str)
         .expect("Failed to deserialize");
         // just to see what the assigner returned
-        println!("{}", hall_request_assigner_output_str);
+        // println!("{}", hall_request_assigner_output_str);
 
         let my_id = system_state_clone.get_my_id();
         if let Some(my_orders) = hall_request_assigner_output_value.get(&my_id) {

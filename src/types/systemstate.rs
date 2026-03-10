@@ -47,7 +47,6 @@ impl SystemState {
         if id == self.my_id {
             return;
         }
-        self.elevators.remove(id);
         self.dead_elevators.insert(id.to_owned());
     }
 
@@ -56,7 +55,13 @@ impl SystemState {
             return;
         }
         self.dead_elevators.remove(id);
-        // Drop stale snapshot.
+    }
+
+    pub fn get_dead_elevators(&self) -> &HashSet<String> {
+        &self.dead_elevators
+    }
+
+    pub fn remove_elevator_record(&mut self, id: &str) {
         self.elevators.remove(id);
     }
 
@@ -253,7 +258,17 @@ impl SystemState {
 // Implementation for pretty printing the elevator state to terminal
 impl fmt::Display for SystemState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "SystemState (id: {})", self.my_id)?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+
+        writeln!(
+            f,
+            "SystemState (id: {}) @ {}.{:03}",
+            self.my_id,
+            now.as_secs(),
+            now.subsec_millis()
+        )?;
         writeln!(f, "Hall requests:")?;
         for floor in 0..NUM_FLOORS {
             writeln!(
