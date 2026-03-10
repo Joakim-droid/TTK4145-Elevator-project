@@ -1,0 +1,154 @@
+{
+    "scenarios": [
+        {
+            "name": "S1: Hall-order failover",
+            "description": "Hall Down floor 3 injected; the assigned elevator is killed before it arrives. A peer must take over.",
+            "verifications": [{"type": "hall_order_served", "floor": 3, "direction": 1}],
+            "steps": [
+                {"action": "inject_order", "type": "hall_down", "floor": 3, "node_id": "elev1"},
+                {"action": "sleep", "duration": 2},
+                {"action": "kill_node", "node_id": "elev1"},
+                {"action": "sleep", "duration": 12},
+                {"action": "verify_logs"},
+                {"action": "start_node", "node_id": "elev1"},
+                {"action": "sleep", "duration": 2}
+            ]
+        },
+        {
+            "name": "S2: Cab-order resurrection (single floor)",
+            "description": "elev1 registers a cab order, is immediately killed, then revived. Peers must preserve its state; it must merge and serve on return.",
+            "verifications": [{"type": "cab_order_served", "node_id": "elev1", "floor": 1}],
+            "steps": [
+                {"action": "inject_order", "type": "cab", "floor": 1, "node_id": "elev1"},
+                {"action": "sleep", "duration": 2},
+                {"action": "kill_node", "node_id": "elev1"},
+                {"action": "sleep", "duration": 2},
+                {"action": "start_node", "node_id": "elev1"},
+                {"action": "sleep", "duration": 12},
+                {"action": "verify_logs"}
+            ]
+        },
+        {
+            "name": "S3: Multi-cab resurrection (two floors)",
+            "description": "elev2 gets two cab orders, is killed, then revived. Both floors must be served after merge.",
+            "verifications": [
+                {"type": "cab_order_served", "node_id": "elev2", "floor": 2},
+                {"type": "cab_order_served", "node_id": "elev2", "floor": 0}
+            ],
+            "steps": [
+                {"action": "inject_order", "type": "cab", "floor": 2, "node_id": "elev2"},
+                {"action": "inject_order", "type": "cab", "floor": 0, "node_id": "elev2"},
+                {"action": "sleep", "duration": 2},
+                {"action": "kill_node", "node_id": "elev2"},
+                {"action": "sleep", "duration": 2},
+                {"action": "start_node", "node_id": "elev2"},
+                {"action": "sleep", "duration": 15},
+                {"action": "verify_logs"},
+                {"action": "sleep", "duration": 2}
+            ]
+        },
+        {
+            "name": "S4: Hall spam + two-elevator failure",
+            "description": "All floors get hall orders, then two elevators are killed. The lone survivor must clear all orders.",
+            "verifications": [{"type": "all_hall_orders_cleared"}],
+            "steps": [
+                {"action": "inject_order", "type": "hall_up",   "floor": 0, "node_id": "elev1"},
+                {"action": "inject_order", "type": "hall_down", "floor": 1, "node_id": "elev2"},
+                {"action": "inject_order", "type": "hall_up",   "floor": 1, "node_id": "elev2"},
+                {"action": "inject_order", "type": "hall_down", "floor": 2, "node_id": "elev3"},
+                {"action": "inject_order", "type": "hall_up",   "floor": 2, "node_id": "elev3"},
+                {"action": "inject_order", "type": "hall_down", "floor": 3, "node_id": "elev1"},
+                {"action": "sleep", "duration": 3},
+                {"action": "kill_node", "node_id": "elev2"},
+                {"action": "kill_node", "node_id": "elev3"},
+                {"action": "sleep", "duration": 20},
+                {"action": "verify_logs"},
+                {"action": "start_node", "node_id": "elev2"},
+                {"action": "start_node", "node_id": "elev3"},
+                {"action": "sleep", "duration": 2}
+            ]
+        },
+        {
+            "name": "S5: Door-open kill + sibling rescue",
+            "description": "Hall Up floor 0 (ground, easiest to reach). The serving elevator is killed the instant it opens doors. A sibling re-serves.",
+            "verifications": [{"type": "hall_order_served", "floor": 0, "direction": 0}],
+            "steps": [
+                {"action": "inject_order", "type": "hall_up", "floor": 0, "node_id": "elev1"},
+                {"action": "wait_for_door_open", "floor": 0, "timeout": 20},
+                {"action": "sleep", "duration": 12},
+                {"action": "verify_logs"}
+            ]
+        },
+        {
+            "name": "S6: Kill elevator mid-journey",
+            "description": "Hall Up floor 3 injected. After 3 s the assigned elevator is killed while still moving. A peer takes over.",
+            "verifications": [{"type": "hall_order_served", "floor": 3, "direction": 0}],
+            "steps": [
+                {"action": "inject_order", "type": "hall_up", "floor": 3, "node_id": "elev1"},
+                {"action": "sleep", "duration": 3},
+                {"action": "kill_node", "node_id": "elev1"},
+                {"action": "sleep", "duration": 12},
+                {"action": "verify_logs"},
+                {"action": "start_node", "node_id": "elev1"},
+                {"action": "sleep", "duration": 2}
+            ]
+        },
+        {
+            "name": "S7: Simultaneous cab orders on all three elevators",
+            "description": "All three nodes get a cab order simultaneously and must each serve their own.",
+            "verifications": [
+                {"type": "cab_order_served", "node_id": "elev1", "floor": 3},
+                {"type": "cab_order_served", "node_id": "elev2", "floor": 0},
+                {"type": "cab_order_served", "node_id": "elev3", "floor": 2}
+            ],
+            "steps": [
+                {"action": "inject_order", "type": "cab", "floor": 3, "node_id": "elev1"},
+                {"action": "inject_order", "type": "cab", "floor": 0, "node_id": "elev2"},
+                {"action": "inject_order", "type": "cab", "floor": 2, "node_id": "elev3"},
+                {"action": "sleep", "duration": 12},
+                {"action": "verify_logs"}
+            ]
+        },
+        {
+            "name": "S8: Mixed hall + cab under rolling reboots",
+            "description": "Hall and cab orders placed while all three nodes are cycled in sequence. No order must go unserved.",
+            "verifications": [{"type": "all_hall_orders_cleared"}],
+            "steps": [
+                {"action": "inject_order", "type": "hall_up",   "floor": 1, "node_id": "elev1"},
+                {"action": "inject_order", "type": "hall_down", "floor": 2, "node_id": "elev2"},
+                {"action": "inject_order", "type": "cab",       "floor": 2, "node_id": "elev3"},
+                {"action": "sleep", "duration": 2},
+                {"action": "kill_node", "node_id": "elev1"},
+                {"action": "sleep", "duration": 1},
+                {"action": "start_node", "node_id": "elev1"},
+                {"action": "inject_order", "type": "hall_up", "floor": 0, "node_id": "elev3"},
+                {"action": "kill_node", "node_id": "elev2"},
+                {"action": "sleep", "duration": 1},
+                {"action": "start_node", "node_id": "elev2"},
+                {"action": "kill_node", "node_id": "elev3"},
+                {"action": "sleep", "duration": 1},
+                {"action": "start_node", "node_id": "elev3"},
+                {"action": "sleep", "duration": 18},
+                {"action": "verify_logs"}
+            ]
+        },
+        {
+            "name": "S9: Concurrent cab + hall with immediate kill",
+            "description": "Inject a hall order and a cab on the same elevator simultaneously, then kill it at once. Survivors must handle the hall order; the cab is verified on resurrection.",
+            "verifications": [
+                {"type": "hall_order_served", "floor": 2, "direction": 1},
+                {"type": "cab_order_served",  "node_id": "elev2", "floor": 1}
+            ],
+            "steps": [
+                {"action": "inject_order", "type": "hall_down", "floor": 2, "node_id": "elev2"},
+                {"action": "inject_order", "type": "cab",       "floor": 1, "node_id": "elev2"},
+                {"action": "sleep", "duration": 2},
+                {"action": "kill_node", "node_id": "elev2"},
+                {"action": "sleep", "duration": 10},
+                {"action": "start_node", "node_id": "elev2"},
+                {"action": "sleep", "duration": 12},
+                {"action": "verify_logs"}
+            ]
+        }
+    ]
+}

@@ -61,7 +61,7 @@ fn main() {
                 println!("Received state from network");
                 if let Ok(fetched_state) = msg {
                     system_state.merge_with(&fetched_state);
-                    // println!("{system_state}")
+                    println!("{system_state}");
                     let order_floor = assigner::decide_next_order(&system_state);
 
                     fsm::step(
