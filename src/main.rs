@@ -9,6 +9,7 @@ use crate::{
 };
 use crossbeam_channel::{self as cbc, select};
 use driver_rust::elevio::elev::Elevator;
+use std::io::Write;
 mod assigner;
 mod config;
 mod fsm;
@@ -32,6 +33,8 @@ fn main() {
         "Starting elevator '{}' connecting to simulator on {} (broadcast_port={})",
         my_id, elevator_address, bcast_port
     );
+    // TODO: Used for debugging in test script, remove later
+    std::io::stdout().flush().unwrap();
 
     let elevator_driver =
         Elevator::init(&elevator_address, NUM_FLOORS as u8).expect("Error connecting to Elevator");
@@ -55,6 +58,11 @@ fn main() {
         peer_state_tx,
     );
 
+    println!("Initial state:");
+    println!("{system_state}");
+    // TODO: Used for debugging in test script, remove later
+    std::io::stdout().flush().unwrap();
+
     loop {
         select! {
             recv(peer_state_rx) -> msg => {
@@ -62,6 +70,8 @@ fn main() {
                 if let Ok(fetched_state) = msg {
                     system_state.merge_with(&fetched_state);
                     println!("{system_state}");
+                    // TODO: Used for debugging in test script, remove later
+                    std::io::stdout().flush().unwrap();
                     let order_floor = assigner::decide_next_order(&system_state);
 
                     fsm::step(
@@ -77,6 +87,7 @@ fn main() {
             recv(event_rx) -> event => {
                 match event {
                     Ok(Event::FloorReached(floor)) => {
+                        println!("[EVENT] floor_reached floor={}", floor);
                         system_state.arrive_at_floor(floor);
                         elevator_driver.floor_indicator(floor);
 
@@ -171,6 +182,10 @@ fn main() {
                     Err(_) => println!("Error in event loop"),
                 }
                 system_state.update_lights(&elevator_driver);
+                println!("Local event handled");
+                println!("{system_state}");
+                // TODO: Used for debugging in test script, remove later
+                std::io::stdout().flush().unwrap();
                 state_to_broadcast_tx.send(system_state.clone()).unwrap();
             }
         }

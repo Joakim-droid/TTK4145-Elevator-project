@@ -6,6 +6,7 @@ import os
 import signal
 import socket
 import json
+import shutil
 from log_verifier import run_verification
 
 # Configuration
@@ -18,12 +19,13 @@ TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(TESTS_DIR, "scenarios.json")
 
 node_processes = {}
-_current_scenario: dict = {}   # set before each scenario runs
+_current_scenario: dict = {}  # set before each scenario runs
+CURRENT_LOG_DIR = os.path.join(TESTS_DIR, "logs")
 
 # Simulator keyboard mappings (from SimElevatorServer docs)
-_HALL_UP_KEYS   = "qwertyui"
+_HALL_UP_KEYS = "qwertyui"
 _HALL_DOWN_KEYS = "sdfghjkl"
-_CAB_KEYS       = "zxcvbnm,."
+_CAB_KEYS = "zxcvbnm,."
 
 # Each simulator lives in its own pane inside window 0 of this session.
 TMUX_SESSION = "elevator_chaos"
@@ -34,6 +36,7 @@ _NODE_PANE: dict = {}
 
 def _tmux_target(node_id):
     return f"{TMUX_SESSION}:0.{_NODE_PANE[node_id]}"
+
 
 # ==========================================
 # INFRASTRUCTURE (Setup / Teardown)
@@ -59,38 +62,66 @@ def wait_for_simulator(port, timeout=10):
 def start_simulators():
     work_dir = os.path.join(ROOT_DIR, "execs")
     sim_bin = "./SimElevatorServer"
-    if not os.path.exists(os.path.join(work_dir, "SimElevatorServer")) and \
-            os.path.exists(os.path.join(work_dir, "SimElevatorServer.exe")):
+    if not os.path.exists(
+        os.path.join(work_dir, "SimElevatorServer")
+    ) and os.path.exists(os.path.join(work_dir, "SimElevatorServer.exe")):
         sim_bin = "./SimElevatorServer.exe"
 
     # Kill any leftover tmux session from a previous run
     subprocess.run(["tmux", "kill-session", "-t", TMUX_SESSION], capture_output=True)
 
-    print(f"[*] Starting simulators in tmux session '{TMUX_SESSION}' (split-pane view)...")
+    print(
+        f"[*] Starting simulators in tmux session '{TMUX_SESSION}' (split-pane view)..."
+    )
     nodes = list(NODES.items())
 
     # Create the session; the first pane (index 0) holds the first simulator.
     first_id, first_port = nodes[0]
     _NODE_PANE[first_id] = 0
-    subprocess.run([
-        "tmux", "new-session", "-d", "-s", TMUX_SESSION, "-x", "240", "-y", "50",
-    ], check=True)
-    subprocess.run([
-        "tmux", "send-keys", "-t", f"{TMUX_SESSION}:0.0",
-        f"cd '{work_dir}' && {sim_bin} --port {first_port}", "Enter",
-    ])
+    subprocess.run(
+        [
+            "tmux",
+            "new-session",
+            "-d",
+            "-s",
+            TMUX_SESSION,
+            "-x",
+            "240",
+            "-y",
+            "50",
+        ],
+        check=True,
+    )
+    subprocess.run(
+        [
+            "tmux",
+            "send-keys",
+            "-t",
+            f"{TMUX_SESSION}:0.0",
+            f"cd '{work_dir}' && {sim_bin} --port {first_port}",
+            "Enter",
+        ]
+    )
 
     # Add the remaining simulators as vertical splits.
     for i, (node_id, port) in enumerate(nodes[1:], 1):
         _NODE_PANE[node_id] = i
         subprocess.run(["tmux", "split-window", "-h", "-t", TMUX_SESSION + ":0"])
-        subprocess.run([
-            "tmux", "send-keys", "-t", f"{TMUX_SESSION}:0.{i}",
-            f"cd '{work_dir}' && {sim_bin} --port {port}", "Enter",
-        ])
+        subprocess.run(
+            [
+                "tmux",
+                "send-keys",
+                "-t",
+                f"{TMUX_SESSION}:0.{i}",
+                f"cd '{work_dir}' && {sim_bin} --port {port}",
+                "Enter",
+            ]
+        )
 
     # Balance pane widths evenly.
-    subprocess.run(["tmux", "select-layout", "-t", TMUX_SESSION + ":0", "even-horizontal"])
+    subprocess.run(
+        ["tmux", "select-layout", "-t", TMUX_SESSION + ":0", "even-horizontal"]
+    )
 
     print("[*] Waiting for simulators to accept connections...")
     for node_id, port in NODES.items():
@@ -114,31 +145,46 @@ def _open_tmux_viewer():
         ["x-terminal-emulator", "-e", "bash", "-c", attach_cmd],
         ["konsole", "--fullscreen", "-e", "bash", "-c", attach_cmd],
         ["xfce4-terminal", "--fullscreen", "-e", "bash", "-c", attach_cmd],
-        ["xterm", "-maximized", "-T", "Elevator Simulators", "-e", "bash", "-c", attach_cmd],
+        [
+            "xterm",
+            "-maximized",
+            "-T",
+            "Elevator Simulators",
+            "-e",
+            "bash",
+            "-c",
+            attach_cmd,
+        ],
     ]
     for cmd in candidates:
         try:
             subprocess.Popen(cmd)
-            print(f"[*] Simulator view opened ({cmd[0]}). "
-                  f"Also reachable via:  tmux attach -t {TMUX_SESSION}")
+            print(
+                f"[*] Simulator view opened ({cmd[0]}). "
+                f"Also reachable via:  tmux attach -t {TMUX_SESSION}"
+            )
             return
         except FileNotFoundError:
             continue
-    print(f"[!] Could not open a terminal automatically. "
-          f"Run manually:  tmux attach -t {TMUX_SESSION}")
+    print(
+        f"[!] Could not open a terminal automatically. "
+        f"Run manually:  tmux attach -t {TMUX_SESSION}"
+    )
 
 
 def start_node(node_id):
     if node_id in node_processes and node_processes[node_id][0].poll() is None:
         return
     port = NODES[node_id]
-    logs_dir = os.path.join(TESTS_DIR, "logs")
-    os.makedirs(logs_dir, exist_ok=True)
-    log_path = os.path.join(logs_dir, f"{node_id}.log")
+    os.makedirs(CURRENT_LOG_DIR, exist_ok=True)
+    log_path = os.path.join(CURRENT_LOG_DIR, f"{node_id}.log")
     print(f"  [+] Starting {node_id}  →  {log_path}")
-    log_file = open(log_path, "w")
+    # Use append mode so restarts within a scenario don't overwrite previous logs
+    log_file = open(log_path, "a")
     p = subprocess.Popen(
         [
+            "stdbuf",
+            "-oL",
             os.path.join(ROOT_DIR, "target", "debug", "TTK4145-Elevator-project"),
             node_id,
             str(port),
@@ -147,6 +193,9 @@ def start_node(node_id):
         stdout=log_file,
         stderr=subprocess.STDOUT,
         cwd=ROOT_DIR,
+        # Place the process in its own process group so kill_node can send
+        # SIGKILL to the entire group (stdbuf + its Rust child).
+        start_new_session=True,
     )
     node_processes[node_id] = (p, log_file)
 
@@ -156,7 +205,13 @@ def kill_node(node_id):
         p, log_file = node_processes[node_id]
         if p.poll() is None:
             print(f"  [✗] KILL {node_id.upper()} — simulating hard crash")
-            p.kill()
+            try:
+                # Kill the entire process group: this takes out stdbuf AND the
+                # Rust child process it spawned (plain p.kill() only kills stdbuf).
+                os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                # Group already dead or PID recycled — fall back to direct kill.
+                p.kill()
             p.wait()
         log_file.close()
         del node_processes[node_id]
@@ -180,7 +235,14 @@ signal.signal(signal.SIGINT, teardown)
 
 
 def get_current_network_state():
-    """Sniff a single UDP broadcast packet from the cluster (used by wait_for_condition)."""
+    """Collect one UDP broadcast packet per active node and return a merged view.
+
+    Opening a fresh socket each call is fine for snapshot checks.  We read
+    packets for up to 0.5 s and accumulate the *most-recent* state for each
+    sender, then merge them into a single dict whose "states" key contains the
+    per-node elevator state (same shape as a single-packet broadcast).
+    """
+    merged: dict = {}
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         if hasattr(socket, "SO_REUSEPORT"):
@@ -190,14 +252,33 @@ def get_current_network_state():
                 pass
         sock.bind(("", BCAST_PORT))
         sock.settimeout(0.5)
-        try:
-            while True:
+        deadline = time.time() + 0.5
+        while time.time() < deadline:
+            try:
                 data, _ = sock.recvfrom(4096)
-                state = json.loads(data.decode("utf-8"))
-                if "hall_epoch" in state:
-                    return state
-        except (TimeoutError, json.JSONDecodeError):
-            return None
+            except (TimeoutError, OSError):
+                break
+            try:
+                pkt = json.loads(data.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                continue
+            if "hall_epoch" not in pkt:
+                continue
+            # Each packet is from one reporter and contains its full world-view.
+            # We use the reporter's own entry in "states" as ground truth for
+            # that node, and accumulate it into merged["states"].
+            reporter = pkt.get("my_id") or pkt.get("id")
+            if not reporter:
+                continue
+            if "states" not in merged:
+                # Bootstrap with first packet's full world view.
+                merged = pkt
+            else:
+                # Overwrite the reporter's own state with their latest broadcast.
+                reporter_state = pkt.get("states", {}).get(reporter)
+                if reporter_state:
+                    merged.setdefault("states", {})[reporter] = reporter_state
+    return merged if merged else None
 
 
 def inject_order(order_type, floor, node_id=None):
@@ -220,7 +301,7 @@ def inject_order(order_type, floor, node_id=None):
     subprocess.run(["tmux", "send-keys", "-t", _tmux_target(target), key])
 
 
-def wait_for_condition(condition_func, timeout=15):
+def wait_for_condition(condition_func, timeout: float = 15):
     start = time.time()
     while time.time() - start < timeout:
         state = get_current_network_state()
@@ -256,6 +337,126 @@ def execute_door_kill(floor, timeout):
         print("  [!] Scenario timed out. Elevators took too long.")
 
 
+def home_elevators():
+    print("[*] Homing all elevators to Floor 0...")
+    for node_id in NODES.keys():
+        inject_order("cab", 0, node_id)
+
+    # Wait until all elevators are at Floor 0 and Idle (or DoorOpen then Idle)
+    def all_at_home(state):
+        for nid in NODES.keys():
+            nstate = state.get("states", {}).get(nid)
+            if not nstate:
+                return False
+            if nstate.get("floor") != 0 or nstate.get("behaviour") not in [
+                "idle",
+                "doorOpen",
+            ]:
+                return False
+        return True
+
+    if wait_for_condition(all_at_home, timeout=25):
+        print("[✓] All elevators homed to Floor 0.")
+        # Extra wait to allow doors to close so they are strictly 'idle'
+        time.sleep(4)
+    else:
+        print("[!] Homing failed or timed out. Continuing anyway...")
+
+
+# ==========================================
+# LIVE STATE VERIFICATION
+# ==========================================
+
+
+def _eval_condition(nstate: dict, key: str, val) -> bool:
+    """Return True if nstate[key] matches val.  val may be a list of accepted values."""
+    actual = nstate.get(key)
+    if isinstance(val, list):
+        return actual in val
+    return actual == val
+
+
+def wait_for_live_state(
+    expected: dict, timeout: float = 20.0, require_all: bool = True
+) -> bool:
+    """Poll UDP broadcasts until all (or any) nodes in *expected* show the desired state.
+
+    Args:
+        expected: { node_id: { key: value, ... }, ... }
+                  Values may be a list of accepted alternatives, e.g. {"behaviour": ["idle","doorOpen"]}.
+        timeout:  How long to poll in seconds.
+        require_all: If True, ALL nodes in *expected* must match simultaneously.
+                     If False, each node only needs to match at least once.
+
+    Returns True if the condition was satisfied within the timeout.
+    """
+    if require_all:
+
+        def condition(state):
+            for nid, exp in expected.items():
+                nstate = state.get("states", {}).get(nid)
+                if nstate is None:
+                    return False
+                for key, val in exp.items():
+                    if not _eval_condition(nstate, key, val):
+                        return False
+            return True
+
+        result = wait_for_condition(condition, timeout=timeout)
+        return result is not None
+    else:
+        # Each node just needs to have matched at least once within the timeout.
+        remaining = {nid: dict(exp) for nid, exp in expected.items()}
+        satisfied: set = set()
+        start = time.time()
+        while time.time() - start < timeout:
+            state = get_current_network_state()
+            if state:
+                for nid in list(remaining.keys()):
+                    if nid in satisfied:
+                        continue
+                    nstate = state.get("states", {}).get(nid)
+                    if nstate is None:
+                        continue
+                    if all(
+                        _eval_condition(nstate, k, v) for k, v in remaining[nid].items()
+                    ):
+                        satisfied.add(nid)
+                if satisfied >= set(remaining.keys()):
+                    return True
+            time.sleep(0.1)
+        return False
+
+
+def verify_live_state(
+    expected: dict, timeout: float = 20.0, require_all: bool = True, label: str = ""
+) -> bool:
+    """Check that nodes reach expected live state within *timeout* seconds.
+
+    Unlike verify_state (log-based), this directly polls the UDP broadcast.
+    Returns True on pass, False on fail, and always prints a clear result line.
+    """
+    tag = f" ({label})" if label else ""
+    mode = "all simultaneously" if require_all else "each at least once"
+    print(f"  [live-check{tag}] Waiting up to {timeout}s for {mode}: {expected}")
+    ok = wait_for_live_state(expected, timeout=timeout, require_all=require_all)
+    if ok:
+        print(f"  [✓] live-check{tag} PASSED")
+    else:
+        # Capture the last known state for diagnostics.
+        last = get_current_network_state()
+        print(f"  [✗] live-check{tag} FAILED — expected {expected}")
+        if last:
+            for nid, nstate in last.get("states", {}).items():
+                if nid in expected:
+                    print(
+                        f"       {nid}: floor={nstate.get('floor')}  "
+                        f"behaviour={nstate.get('behaviour')}  "
+                        f"direction={nstate.get('direction')}"
+                    )
+    return ok
+
+
 # ==========================================
 # DYNAMIC CONFIG LOADER
 # ==========================================
@@ -270,8 +471,21 @@ def run_scenarios_from_config():
         config = json.load(f)
 
     scenarios = config.get("scenarios", [])
-    logs_dir  = os.path.join(TESTS_DIR, "logs")
+    logs_dir = os.path.join(TESTS_DIR, "logs")
     passed_all = True
+
+    # Start all nodes at the beginning of the test suite instead of per-scenario
+    print("[*] Starting Rust nodes...")
+    for node_id in NODES.keys():
+        start_node(node_id)
+
+    # Give nodes time to start broadcasting before the first scenario begins.
+    # Without this, get_current_network_state() returns None and home_elevators()
+    # polls the entire 25s window without seeing a single packet.
+    print("[*] Waiting 8s for nodes to begin broadcasting...")
+    time.sleep(8)
+
+    print("\n[*] Starting Config-Driven Chaos Orchestrator...\n")
 
     for idx, scenario in enumerate(scenarios, 1):
         _current_scenario.clear()
@@ -283,13 +497,14 @@ def run_scenarios_from_config():
             print(f"  {scenario['description']}")
         print("═" * 64)
 
-        # Rotate logs: each scenario gets a fresh log file so the verifier
-        # only sees state produced during this scenario.
-        for node_id, (p, lf) in list(node_processes.items()):
-            lf.close()
-            new_lf = open(os.path.join(logs_dir, f"{node_id}.log"), "w")
-            node_processes[node_id] = (p, new_lf)
-            p.stdout = new_lf  # redirect already-running process (best effort)
+        # Home elevators before starting each scenario
+        print("\n[✓] Cluster is stable. Homing elevators...")
+        home_elevators()
+
+        # Ensure elevators are somewhat stable before starting the scenario timer
+        time.sleep(1)
+        scenario_start_time = time.time()
+        scenario_passed = True
 
         for step in scenario.get("steps", []):
             action = step.get("action")
@@ -314,15 +529,80 @@ def run_scenarios_from_config():
             elif action == "wait_for_door_open":
                 execute_door_kill(step.get("floor"), step.get("timeout", 15))
 
-            elif action == "verify_logs":
-                # Allow a moment for the last log lines to flush to disk.
+            elif action == "verify_state":
+                # Legacy log-based state check (kept for backward compatibility).
                 time.sleep(0.5)
-                ok = run_verification(scenario, logs_dir, list(NODES.keys()))
+                expected = step.get("expected", {})
+                v_scenario = {
+                    "verifications": [{"type": "current_state", "expected": expected}]
+                }
+                ok = run_verification(
+                    v_scenario,
+                    logs_dir,
+                    list(NODES.keys()),
+                    scenario_start_time,
+                )
                 if not ok:
                     passed_all = False
+                    scenario_passed = False
+
+            elif action == "verify_state_live":
+                # Live UDP-based state check — does not depend on log timing.
+                expected = step.get("expected", {})
+                timeout = step.get("timeout", 20.0)
+                require_all = step.get("require_all", True)
+                label = step.get("label", "")
+                ok = verify_live_state(
+                    expected, timeout=timeout, require_all=require_all, label=label
+                )
+                if not ok:
+                    passed_all = False
+                    scenario_passed = False
+
+            elif action == "wait_for_live_state":
+                # Block execution until the live state condition is met (no pass/fail).
+                expected = step.get("expected", {})
+                timeout = step.get("timeout", 20.0)
+                require_all = step.get("require_all", True)
+                reached = wait_for_live_state(
+                    expected, timeout=timeout, require_all=require_all
+                )
+                if not reached:
+                    print(f"  [!] Timed out waiting for state: {expected}")
+
+            elif action == "verify_logs":
+                time.sleep(0.5)
+                ok = run_verification(
+                    scenario, logs_dir, list(NODES.keys()), scenario_start_time
+                )
+                if not ok:
+                    passed_all = False
+                    scenario_passed = False
+
+            elif action == "verify_logs_extended":
+                # Extended log verification that includes per-node timeline dumps.
+                time.sleep(0.5)
+                extra_checks = step.get("checks", [])
+                combined_scenario = dict(scenario)
+                if extra_checks:
+                    existing = combined_scenario.get("verifications", [])
+                    combined_scenario["verifications"] = existing + extra_checks
+                ok = run_verification(
+                    combined_scenario,
+                    logs_dir,
+                    list(NODES.keys()),
+                    scenario_start_time,
+                    verbose=True,
+                )
+                if not ok:
+                    passed_all = False
+                    scenario_passed = False
 
             else:
                 print(f"  [!] Unknown action: {action}")
+
+        status = "PASS" if scenario_passed else "FAIL"
+        print(f"\n  Scenario result: {status}")
 
     return passed_all
 
@@ -331,17 +611,13 @@ if __name__ == "__main__":
     os.system("pkill -f SimElevatorServer || true")
     os.system("pkill -f TTK4145-Elevator-project || true")
 
+    logs_dir = os.path.join(TESTS_DIR, "logs")
+    if os.path.exists(logs_dir):
+        print("[*] Cleaning up old logs...")
+        shutil.rmtree(logs_dir, ignore_errors=True)
+
     build_project()
     start_simulators()
-
-    print("\n[*] Starting Rust nodes...")
-    for node_id in NODES.keys():
-        start_node(node_id)
-
-    print(
-        "\n[✓] Cluster is stable. Starting Config-Driven Chaos Orchestrator in 3 seconds...\n"
-    )
-    time.sleep(3)
 
     run_scenarios_from_config()
 
