@@ -105,16 +105,16 @@ def start_simulators():
 
 def _open_tmux_viewer():
     """Spawn a terminal window that attaches to the tmux session so the user
-    can watch all three simulator panes side by side."""
+    can watch all three simulator panes side by side in full screen."""
     attach_cmd = f"tmux attach -t {TMUX_SESSION}"
     # All -e terminals accept:  terminal -e bash -c "cmd"
     # gnome-terminal uses -- instead of -e
     candidates = [
-        ["gnome-terminal", "--", "bash", "-c", attach_cmd],
+        ["gnome-terminal", "--full-screen", "--", "bash", "-c", attach_cmd],
         ["x-terminal-emulator", "-e", "bash", "-c", attach_cmd],
-        ["konsole", "-e", "bash", "-c", attach_cmd],
-        ["xfce4-terminal", "-e", "bash", "-c", attach_cmd],
-        ["xterm", "-T", "Elevator Simulators", "-e", "bash", "-c", attach_cmd],
+        ["konsole", "--fullscreen", "-e", "bash", "-c", attach_cmd],
+        ["xfce4-terminal", "--fullscreen", "-e", "bash", "-c", attach_cmd],
+        ["xterm", "-maximized", "-T", "Elevator Simulators", "-e", "bash", "-c", attach_cmd],
     ]
     for cmd in candidates:
         try:

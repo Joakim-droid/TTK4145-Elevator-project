@@ -9,10 +9,13 @@ use std::{
 };
 
 pub fn initialize_elevator_position(elevator: &Elevator, system_state: &mut SystemState) {
+    elevator.door_light(false);
     if let Some(floor) = elevator.floor_sensor() {
         elevator.motor_direction(Direction::Stop.into());
         elevator.floor_indicator(floor);
         system_state.arrive_at_floor(floor);
+        let my_state = system_state.get_my_state();
+        my_state.reset_seq();
         return;
     }
 
@@ -23,6 +26,8 @@ pub fn initialize_elevator_position(elevator: &Elevator, system_state: &mut Syst
             elevator.motor_direction(Direction::Stop.into());
             elevator.floor_indicator(floor);
             system_state.arrive_at_floor(floor);
+            let my_state = system_state.get_my_state();
+            my_state.reset_seq();
             return;
         }
         sleep(Duration::from_millis(20));
