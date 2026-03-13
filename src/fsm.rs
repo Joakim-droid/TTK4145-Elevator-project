@@ -13,10 +13,10 @@ fn find_direction(current_floor: u8, goal_floor: u8) -> Direction {
     }
 }
 
-fn spawn_door_timer(timer_id: u64, event_tx: Sender<Event>) {
+pub fn spawn_door_timer(timer_id: u64, event_tx: Sender<Event>) {
     std::thread::spawn(move || {
         std::thread::sleep(DOOR_OPEN_DURATION);
-        event_tx.send(Event::DoorOpenTimeOut(timer_id)).unwrap();
+        let _ = event_tx.send(Event::DoorOpenTimeOut(timer_id));
     });
 }
 

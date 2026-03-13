@@ -55,6 +55,7 @@ impl SystemState {
             return;
         }
         self.dead_elevators.remove(id);
+        self.elevators.remove(id);
     }
 
     pub fn get_dead_elevators(&self) -> &HashSet<String> {
