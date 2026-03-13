@@ -99,8 +99,8 @@ pub fn step(
             if current_floor == goal
                 && let Some(timer_id) = local_elevator_state.open_door()
             {
-                elevator_driver.door_light(true);
                 elevator_driver.motor_direction(Direction::Stop.into());
+                elevator_driver.door_light(true);
                 spawn_door_timer(timer_id, event_tx.clone());
                 // TODO: Clear orders at this floor
                 system_state.clear_order(current_floor);

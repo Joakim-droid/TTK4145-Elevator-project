@@ -55,7 +55,6 @@ impl SystemState {
             return;
         }
         self.dead_elevators.remove(id);
-        self.elevators.remove(id);
     }
 
     pub fn get_dead_elevators(&self) -> &HashSet<String> {
@@ -147,26 +146,44 @@ impl SystemState {
             return;
         }
 
-        let local_state = self.get_my_state();
-        local_state.clear_cab_request(floor);
+        // Scope the borrow to drop local_state before mutating self
+        let direction = {
+            let local_state = self.get_my_state();
+            local_state.clear_cab_request(floor);
+            local_state.get_direction()
+        };
 
-        let direction = local_state.get_direction();
+        let mut clear_up = false;
+        let mut clear_down = false;
 
         match direction {
             Direction::Up => {
-                self.bump_hall_epoch(floor as usize, OrderType::HallUp);
-                self.set_hall_order(false, floor, OrderType::HallUp);
+                if self.hall_requests[floor as usize][0] {
+                    clear_up = true; // Clear UP if it exists
+                } else if self.hall_requests[floor as usize][1] {
+                    clear_down = true; // Fallback: clear DOWN if no UP exists
+                }
             }
             Direction::Down => {
-                self.bump_hall_epoch(floor as usize, OrderType::HallDown);
-                self.set_hall_order(false, floor, OrderType::HallDown);
+                if self.hall_requests[floor as usize][1] {
+                    clear_down = true; // Clear DOWN if it exists
+                } else if self.hall_requests[floor as usize][0] {
+                    clear_up = true; // Fallback: clear UP if no DOWN exists
+                }
             }
             Direction::Stop => {
-                self.bump_hall_epoch(floor as usize, OrderType::HallUp);
-                self.set_hall_order(false, floor, OrderType::HallUp);
-                self.bump_hall_epoch(floor as usize, OrderType::HallDown);
-                self.set_hall_order(false, floor, OrderType::HallDown);
+                clear_up = true;
+                clear_down = true;
             }
+        }
+
+        if clear_up {
+            self.bump_hall_epoch(floor as usize, OrderType::HallUp);
+            self.set_hall_order(false, floor, OrderType::HallUp);
+        }
+        if clear_down {
+            self.bump_hall_epoch(floor as usize, OrderType::HallDown);
+            self.set_hall_order(false, floor, OrderType::HallDown);
         }
     }
 
@@ -204,15 +221,22 @@ impl SystemState {
 
             match self.elevators.get(id) {
                 None => {
-                    // We don't have this elevator, take it.
                     self.elevators.insert(id.clone(), other_state.clone());
                 }
-                // We have this elevator, take it if it's newer.
                 Some(self_state) => {
                     if other_state.get_seq() > self_state.get_seq() {
-                        self.elevators.insert(id.clone(), other_state.clone());
+                        if id == &self.my_id {
+                            // RECOVERY MODE: This is a backup of ourselves!
+                            // Safely recover cab requests without overwriting physical floor/direction.
+                            let mut recovered = self_state.clone();
+                            recovered.recover_from_backup(other_state);
+                            self.elevators.insert(id.clone(), recovered);
+                        } else {
+                            // NORMAL MODE: Overwrite peer state
+                            self.elevators.insert(id.clone(), other_state.clone());
+                        }
                     }
-                } //TODO: Implement tiebreaker
+                }
             }
         }
 

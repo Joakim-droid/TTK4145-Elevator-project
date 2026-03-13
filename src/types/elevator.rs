@@ -31,9 +31,11 @@ impl ElevatorState {
     }
 
     pub fn stop(&mut self) {
-        self.behaviour = Behaviour::Idle;
-        self.direction = Direction::Stop;
-        self.bump_seq();
+        if self.behaviour != Behaviour::Idle || self.direction != Direction::Stop {
+            self.behaviour = Behaviour::Idle;
+            self.direction = Direction::Stop;
+            self.bump_seq();
+        }
     }
 
     pub fn get_behavior(&self) -> Behaviour {
@@ -45,8 +47,10 @@ impl ElevatorState {
             eprint!("Undefined floor ordered: {}", floor);
             return;
         }
-        self.floor = Some(floor);
-        self.bump_seq();
+        if self.floor != Some(floor) {
+            self.floor = Some(floor);
+            self.bump_seq();
+        }
     }
 
     pub fn get_floor(&self) -> Option<u8> {
@@ -54,21 +58,17 @@ impl ElevatorState {
     }
 
     pub fn add_cab_request(&mut self, floor: u8) {
-        if (floor as usize) >= NUM_FLOORS {
-            eprint!("Undefined floor ordered: {}", floor);
-            return;
+        if (floor as usize) < NUM_FLOORS && !self.cab_requests[floor as usize] {
+            self.cab_requests[floor as usize] = true;
+            self.bump_seq();
         }
-        self.cab_requests[floor as usize] = true;
-        self.bump_seq();
     }
 
     pub fn clear_cab_request(&mut self, floor: u8) {
-        if (floor as usize) >= NUM_FLOORS {
-            eprint!("Undefined floor ordered: {}", floor);
-            return;
+        if (floor as usize) < NUM_FLOORS && self.cab_requests[floor as usize] {
+            self.cab_requests[floor as usize] = false;
+            self.bump_seq();
         }
-        self.cab_requests[floor as usize] = false;
-        self.bump_seq();
     }
 
     pub fn get_cab_request(&self, floor: u8) -> bool {
@@ -88,48 +88,49 @@ impl ElevatorState {
     }
 
     pub fn close_door(&mut self) {
-        if self.behaviour != Behaviour::DoorOpen {
-            eprintln!("Should not call close door if door is not open");
-            return;
+        if self.behaviour == Behaviour::DoorOpen {
+            self.behaviour = Behaviour::Idle;
+            self.direction = Direction::Stop;
+            self.bump_seq();
         }
-
-        self.behaviour = Behaviour::Idle;
-        self.direction = Direction::Stop;
-        self.bump_seq();
     }
 
     pub fn set_direction(&mut self, direction: Direction) {
         if direction == Direction::Stop {
             self.stop();
         } else if direction == Direction::Up {
-            self.direction = Direction::Up;
-            self.behaviour = Behaviour::Moving;
-            self.bump_seq();
+            if self.direction != Direction::Up || self.behaviour != Behaviour::Moving {
+                self.direction = Direction::Up;
+                self.behaviour = Behaviour::Moving;
+                self.bump_seq();
+            }
         } else {
-            self.direction = Direction::Down;
-            self.behaviour = Behaviour::Moving;
-            self.bump_seq();
+            if self.direction != Direction::Down || self.behaviour != Behaviour::Moving {
+                self.direction = Direction::Down;
+                self.behaviour = Behaviour::Moving;
+                self.bump_seq();
+            }
         }
     }
 
     pub fn get_direction(&self) -> Direction {
         self.direction
     }
-
     pub fn get_current_timer_id(&self) -> u64 {
         self.door_open_counter
     }
-
     pub fn is_obstructed(&self) -> bool {
         self.obstruction
     }
-
     pub fn is_emergency_stop(&self) -> bool {
         self.emergency_stop
     }
 
     pub fn set_emergency_stop(&mut self, is_pressed: bool) {
-        self.emergency_stop = is_pressed
+        if self.emergency_stop != is_pressed {
+            self.emergency_stop = is_pressed;
+            self.bump_seq();
+        }
     }
 
     pub fn get_seq(&self) -> u64 {
@@ -141,6 +142,19 @@ impl ElevatorState {
             self.obstruction = val;
             self.bump_seq();
         }
+    }
+
+    pub fn recover_from_backup(&mut self, backup: &ElevatorState) {
+        self.seq = backup.seq;
+        for f in 0..crate::config::NUM_FLOORS {
+            if backup.cab_requests[f] {
+                self.cab_requests[f] = true;
+            }
+        }
+    }
+
+    pub fn reset_seq(&mut self) {
+        self.seq = 0;
     }
 }
 
