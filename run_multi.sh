@@ -13,6 +13,33 @@ NODES=(
 # Shared broadcast port
 BCAST_PORT=16659
 
+wait_for_simulator() {
+  local port="$1"
+  local timeout="${2:-10}"
+  local start_ts
+  start_ts="$(date +%s)"
+
+  while true; do
+    if python3 - <<PY >/dev/null 2>&1
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(0.2)
+ok = s.connect_ex(("127.0.0.1", $port)) == 0
+s.close()
+raise SystemExit(0 if ok else 1)
+PY
+    then
+      return 0
+    fi
+
+    if (( $(date +%s) - start_ts >= timeout )); then
+      return 1
+    fi
+
+    sleep 0.2
+  done
+}
+
 open_terminal() {
   local title="$1"
   local work_dir="$2"
@@ -67,7 +94,16 @@ for node in "${NODES[@]}"; do
   open_terminal "Sim $sim_port" "$ROOT_DIR/execs" "$SIM_CMD --port $sim_port"
 done
 
-sleep 1
+echo "Waiting for simulators to accept connections..."
+for node in "${NODES[@]}"; do
+  read -r id sim_port <<<"$node"
+  if wait_for_simulator "$sim_port"; then
+    echo "Simulator for $id on port $sim_port is ready"
+  else
+    echo "Timed out waiting for simulator $id on port $sim_port"
+    exit 1
+  fi
+done
 
 echo "Starting Rust nodes..."
 for node in "${NODES[@]}"; do

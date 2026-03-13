@@ -9,3 +9,4 @@ driver-rust = { git = "https://github.com/TTK4145/driver-rust", tag = "v0.1.0" }
 network-rust = { git = "https://github.com/TTK4145/network-rust", tag = "v0.3.0" }
 serde = "1.0.228"
 serde_json = "1.0.149"
+socket2 = { version = "0.3.19", features = ["reuseport"] }
