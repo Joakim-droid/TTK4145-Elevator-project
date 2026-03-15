@@ -66,13 +66,19 @@ pub fn step(
             if current_floor == goal_floor
                 && let Some(timer_id) = local_elevator_state.open_door()
             {
+                println!("[EVENT] door_opened floor={}", current_floor);
                 elevator_driver.door_light(true);
                 spawn_door_timer(timer_id, event_tx.clone());
                 // TODO: Clear orders at this floor,
                 system_state.clear_order(current_floor);
+                println!("[EVENT] order_cleared floor={}", current_floor);
             } else {
                 let direction = find_direction(current_floor, goal_floor);
 
+                println!(
+                    "[EVENT] motor_start floor={} direction={:?} goal={}",
+                    current_floor, direction, goal_floor
+                );
                 elevator_driver.motor_direction(direction.into());
                 local_elevator_state.set_direction(direction);
             }
@@ -99,11 +105,13 @@ pub fn step(
             if current_floor == goal
                 && let Some(timer_id) = local_elevator_state.open_door()
             {
+                println!("[EVENT] door_opened floor={}", current_floor);
                 elevator_driver.motor_direction(Direction::Stop.into());
                 elevator_driver.door_light(true);
                 spawn_door_timer(timer_id, event_tx.clone());
                 // TODO: Clear orders at this floor
                 system_state.clear_order(current_floor);
+                println!("[EVENT] order_cleared floor={}", current_floor);
             }
         }
 

@@ -57,18 +57,19 @@ pub fn decide_next_order(system_state: &SystemState) -> Option<u8> {
             HashMap<String, Vec<Vec<bool>>>,
         >(&hall_request_assigner_output_str)
         .expect("Failed to deserialize");
-        // just to see what the assigner returned
-        // println!("{}", hall_request_assigner_output_str);
 
         let my_id = system_state_clone.get_my_id();
+        println!("Assigner output for {}: {}", my_id, hall_request_assigner_output_str);
         if let Some(my_orders) = hall_request_assigner_output_value.get(&my_id) {
             for (floor, orders) in my_orders.iter().enumerate() {
                 if orders.iter().any(|&active| active) {
+                    println!("Assigner decided goal floor: {}", floor);
                     return Some(floor as u8);
                 }
             }
         }
 
+        println!("Assigner decided goal floor: None");
         None
     } else {
         let error_msg = String::from_utf8_lossy(&program_out.stderr);
