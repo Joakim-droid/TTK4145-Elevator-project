@@ -29,18 +29,22 @@ pub fn step(
 ) {
     let local_elevator_state = system_state.get_my_state();
 
-    if goal.is_none() {
-        elevator_driver.motor_direction(Direction::Stop.into());
-        local_elevator_state.stop();
-        return;
-    }
-
     if local_elevator_state.is_obstructed() {
         if local_elevator_state.get_behavior() == Behaviour::Moving {
             elevator_driver.motor_direction(Direction::Stop.into());
             local_elevator_state.stop();
         }
-        // TODO: Maybe reset timer here or in main
+
+        if let Some(new_id) = local_elevator_state.open_door() {
+            elevator_driver.door_light(true);
+            spawn_door_timer(new_id, event_tx.clone());
+        }
+        return;
+    }
+
+    if goal.is_none() {
+        elevator_driver.motor_direction(Direction::Stop.into());
+        local_elevator_state.stop();
         return;
     }
 
