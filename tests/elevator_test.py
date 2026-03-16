@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import subprocess
 import time
 import sys
@@ -7,10 +8,12 @@ import signal
 import socket
 import json
 import shutil
+import platform
 from log_verifier import run_verification
 
 # Configuration
 NODES = {"elev1": 15657, "elev2": 15658, "elev3": 15659}
+PEER_DISCOVERY_PORT = 16658
 BCAST_PORT = 16659
 # ROOT_DIR should point to the project root so `execs/` is found there.
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -21,6 +24,10 @@ CONFIG_FILE = os.path.join(TESTS_DIR, "scenarios.json")
 node_processes = {}
 _current_scenario: dict = {}  # set before each scenario runs
 CURRENT_LOG_DIR = os.path.join(TESTS_DIR, "logs")
+NOISE_RULE_PATH = "/tmp/elevator_noise.rule"
+NOISE_CONF_PATH = "/tmp/pf.elevator.conf"
+NOISE_ENABLED = False
+TEST_OPTIONS = {"noise": 0, "keep_running": False}
 
 # Simulator keyboard mappings (from SimElevatorServer docs)
 _HALL_UP_KEYS = "qwertyui"
@@ -36,6 +43,117 @@ _NODE_PANE: dict = {}
 
 def _tmux_target(node_id):
     return f"{TMUX_SESSION}:0.{_NODE_PANE[node_id]}"
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--noise",
+        type=int,
+        default=0,
+        help="Enable packet loss on UDP peer/state traffic during the test run (macOS pf).",
+    )
+    parser.add_argument(
+        "--keep-running",
+        action="store_true",
+        help="Keep simulators and nodes alive after the suite finishes.",
+    )
+    return parser.parse_args()
+
+
+def _record_issue(issues: list[str], message: str):
+    if message not in issues:
+        issues.append(message)
+
+
+def _format_summary_lines(results: list[dict]) -> list[str]:
+    total = len(results)
+    passed = sum(1 for result in results if result["passed"])
+    failed = total - passed
+
+    lines = [
+        "═" * 64,
+        " TEST SUMMARY",
+        "═" * 64,
+        f" Passed: {passed}/{total}",
+        f" Failed: {failed}/{total}",
+    ]
+
+    if TEST_OPTIONS["noise"]:
+        lines.append(
+            f" Noise: {TEST_OPTIONS['noise']}% packet loss on UDP {PEER_DISCOVERY_PORT}/{BCAST_PORT}"
+        )
+    lines.append("")
+
+    for idx, result in enumerate(results, 1):
+        status = "PASS" if result["passed"] else "FAIL"
+        lines.append(f" [{idx:>2}] {status}  {result['name']}")
+        for issue in result["issues"][:3]:
+            lines.append(f"      - {issue}")
+        if len(result["issues"]) > 3:
+            lines.append(f"      - ... {len(result['issues']) - 3} more")
+        lines.append("")
+
+    return lines
+
+
+def print_and_write_summary(results: list[dict], logs_dir: str):
+    lines = _format_summary_lines(results)
+    print("\n" + "\n".join(lines))
+    os.makedirs(logs_dir, exist_ok=True)
+    summary_path = os.path.join(logs_dir, "summary.txt")
+    with open(summary_path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    print(f"[*] Wrote summary: {summary_path}")
+
+
+def apply_noise(percent: int):
+    global NOISE_ENABLED
+    if percent <= 0:
+        return
+
+    if platform.system() != "Darwin":
+        raise RuntimeError("--noise is currently only supported on macOS")
+
+    rule = (
+        "block drop in quick proto udp from any to any "
+        f"port {{{PEER_DISCOVERY_PORT},{BCAST_PORT}}} probability {percent}%\n"
+    )
+
+    with open(NOISE_RULE_PATH, "w") as f:
+        f.write(rule)
+
+    with open("/etc/pf.conf", "r") as f:
+        base_pf = f.read()
+
+    with open(NOISE_CONF_PATH, "w") as f:
+        f.write(base_pf)
+        f.write('\nanchor "elevator_noise"\n')
+        f.write(f'load anchor "elevator_noise" from "{NOISE_RULE_PATH}"\n')
+
+    print(
+        f"[*] Enabling {percent}% packet loss on UDP ports {PEER_DISCOVERY_PORT} and {BCAST_PORT}..."
+    )
+    subprocess.run(["sudo", "pfctl", "-f", NOISE_CONF_PATH], check=True)
+    subprocess.run(["sudo", "pfctl", "-e"], check=True)
+    subprocess.run(["sudo", "pfctl", "-a", "elevator_noise", "-sr"], check=True)
+    NOISE_ENABLED = True
+
+
+def cleanup_noise():
+    global NOISE_ENABLED
+    if not NOISE_ENABLED:
+        return
+
+    print("[*] Disabling packet loss rules...")
+    subprocess.run(["sudo", "pfctl", "-f", "/etc/pf.conf"], check=False)
+    subprocess.run(["sudo", "pfctl", "-d"], check=False)
+    for path in (NOISE_RULE_PATH, NOISE_CONF_PATH):
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+    NOISE_ENABLED = False
 
 
 # ==========================================
@@ -225,13 +343,18 @@ def kill_node(node_id):
         del node_processes[node_id]
 
 
-def teardown(signum=None, frame=None):
+def cleanup_all():
     print("\n[*] Tearing down all processes...")
     for node_id in list(node_processes.keys()):
         kill_node(node_id)
     subprocess.run(["tmux", "kill-session", "-t", TMUX_SESSION], capture_output=True)
     os.system("pkill -f SimElevatorServer || true")
     os.system("pkill -f TTK4145-Elevator-project || true")
+    cleanup_noise()
+
+
+def teardown(signum=None, frame=None):
+    cleanup_all()
     sys.exit(0)
 
 
@@ -473,7 +596,7 @@ def verify_live_state(
 def run_scenarios_from_config():
     if not os.path.exists(CONFIG_FILE):
         print(f"[!] Configuration file not found: {CONFIG_FILE}")
-        return
+        return False, []
 
     with open(CONFIG_FILE, "r") as f:
         config = json.load(f)
@@ -481,6 +604,7 @@ def run_scenarios_from_config():
     scenarios = config.get("scenarios", [])
     logs_dir = os.path.join(TESTS_DIR, "logs")
     passed_all = True
+    scenario_results: list[dict] = []
 
     # Start all nodes at the beginning of the test suite instead of per-scenario
     print("[*] Starting Rust nodes...")
@@ -513,6 +637,7 @@ def run_scenarios_from_config():
         time.sleep(1)
         scenario_start_time = time.time()
         scenario_passed = True
+        scenario_issues: list[str] = []
 
         for step in scenario.get("steps", []):
             action = step.get("action")
@@ -553,6 +678,7 @@ def run_scenarios_from_config():
                 if not ok:
                     passed_all = False
                     scenario_passed = False
+                    _record_issue(scenario_issues, "state verification failed")
 
             elif action == "verify_state_live":
                 # Live UDP-based state check — does not depend on log timing.
@@ -566,6 +692,10 @@ def run_scenarios_from_config():
                 if not ok:
                     passed_all = False
                     scenario_passed = False
+                    issue = "live-check failed"
+                    if label:
+                        issue += f" ({label})"
+                    _record_issue(scenario_issues, issue)
 
             elif action == "wait_for_live_state":
                 # Block execution until the live state condition is met (no pass/fail).
@@ -586,6 +716,7 @@ def run_scenarios_from_config():
                 if not ok:
                     passed_all = False
                     scenario_passed = False
+                    _record_issue(scenario_issues, "log verification failed")
 
             elif action == "verify_logs_extended":
                 # Extended log verification that includes per-node timeline dumps.
@@ -605,33 +736,59 @@ def run_scenarios_from_config():
                 if not ok:
                     passed_all = False
                     scenario_passed = False
+                    _record_issue(scenario_issues, "extended log verification failed")
 
             else:
                 print(f"  [!] Unknown action: {action}")
+                passed_all = False
+                scenario_passed = False
+                _record_issue(scenario_issues, f"unknown action: {action}")
 
         status = "PASS" if scenario_passed else "FAIL"
         print(f"\n  Scenario result: {status}")
+        scenario_results.append(
+            {
+                "name": scenario.get("name", "Unnamed"),
+                "passed": scenario_passed,
+                "issues": scenario_issues,
+            }
+        )
 
-    return passed_all
+    return passed_all, scenario_results
 
 
 if __name__ == "__main__":
+    args = parse_args()
+    TEST_OPTIONS["noise"] = max(0, min(100, args.noise))
+    TEST_OPTIONS["keep_running"] = args.keep_running
+
     os.system("pkill -f SimElevatorServer || true")
     os.system("pkill -f TTK4145-Elevator-project || true")
 
     logs_dir = os.path.join(TESTS_DIR, "logs")
-    if os.path.exists(logs_dir):
-        print("[*] Cleaning up old logs...")
-        shutil.rmtree(logs_dir, ignore_errors=True)
+    passed_all = False
+    scenario_results: list[dict] = []
 
-    build_project()
-    start_simulators()
+    try:
+        if os.path.exists(logs_dir):
+            print("[*] Cleaning up old logs...")
+            shutil.rmtree(logs_dir, ignore_errors=True)
 
-    run_scenarios_from_config()
+        apply_noise(TEST_OPTIONS["noise"])
+        build_project()
+        start_simulators()
 
-    print("\n" + "═" * 64)
-    print(" ALL AUTOMATED SCENARIOS COMPLETED")
-    print("═" * 64)
-    print("[*] Press Ctrl+C to stop everything and close the terminals.")
-    while True:
-        time.sleep(1)
+        passed_all, scenario_results = run_scenarios_from_config()
+
+        print("\n" + "═" * 64)
+        print(" ALL AUTOMATED SCENARIOS COMPLETED")
+        print("═" * 64)
+        print_and_write_summary(scenario_results, logs_dir)
+        if not passed_all:
+            print("[!] One or more scenarios failed.")
+        if TEST_OPTIONS["keep_running"]:
+            print("[*] Press Ctrl+C to stop everything and close the terminals.")
+            while True:
+                time.sleep(1)
+    finally:
+        cleanup_all()

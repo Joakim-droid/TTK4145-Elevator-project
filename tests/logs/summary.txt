@@ -1,0 +1,28 @@
+════════════════════════════════════════════════════════════════
+ TEST SUMMARY
+════════════════════════════════════════════════════════════════
+ Passed: 8/10
+ Failed: 2/10
+
+ [ 1] PASS  S0: Predictable Start + State Verification
+
+ [ 2] PASS  S1: Hall-order failover
+
+ [ 3] PASS  S2: Cab-order resurrection (single floor)
+
+ [ 4] PASS  S3: Multi-cab resurrection (two floors)
+
+ [ 5] PASS  S4: Hall spam + two-elevator failure
+
+ [ 6] PASS  S5: Door-open kill + sibling rescue
+
+ [ 7] PASS  S6: Kill elevator mid-journey
+
+ [ 8] FAIL  S7: Simultaneous cab orders on all three elevators
+      - extended log verification failed
+
+ [ 9] PASS  S8: Mixed hall + cab under rolling reboots
+
+ [10] FAIL  S9: Concurrent cab + hall with immediate kill
+      - extended log verification failed
+
