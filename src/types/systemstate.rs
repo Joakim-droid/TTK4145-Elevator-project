@@ -96,12 +96,16 @@ impl SystemState {
                 local_state.add_cab_request(floor);
             }
             OrderType::HallUp => {
-                self.bump_hall_epoch(floor as usize, order);
-                self.set_hall_order(true, floor, order);
+                if !self.hall_requests[floor as usize][0] {
+                    self.bump_hall_epoch(floor as usize, order);
+                    self.set_hall_order(true, floor, order);
+                }
             }
             OrderType::HallDown => {
-                self.bump_hall_epoch(floor as usize, order);
-                self.set_hall_order(true, floor, order);
+                if !self.hall_requests[floor as usize][1] {
+                    self.bump_hall_epoch(floor as usize, order);
+                    self.set_hall_order(true, floor, order);
+                }
             }
         }
     }
@@ -212,29 +216,28 @@ impl SystemState {
         }
     }
 
-    pub fn merge_with(&mut self, other: &SystemState) {
+    pub fn merge_with(&mut self, other: &SystemState) -> bool {
+        let mut changed = false;
         // Merge elevator states by sequence number.
         for (id, other_state) in &other.elevators {
-            if self.dead_elevators.contains(id) {
+            if self.dead_elevators.contains(id) && id != &self.my_id {
+                continue;
+            }
+
+            if id == &self.my_id {
+                changed |= self.get_my_state().recover_from_backup(other_state);
                 continue;
             }
 
             match self.elevators.get(id) {
                 None => {
                     self.elevators.insert(id.clone(), other_state.clone());
+                    changed = true;
                 }
                 Some(self_state) => {
-                    if other_state.get_seq() > self_state.get_seq() {
-                        if id == &self.my_id {
-                            // RECOVERY MODE: This is a backup of ourselves!
-                            // Safely recover cab requests without overwriting physical floor/direction.
-                            let mut recovered = self_state.clone();
-                            recovered.recover_from_backup(other_state);
-                            self.elevators.insert(id.clone(), recovered);
-                        } else {
-                            // NORMAL MODE: Overwrite peer state
-                            self.elevators.insert(id.clone(), other_state.clone());
-                        }
+                    if other_state.is_newer_than(self_state) {
+                        self.elevators.insert(id.clone(), other_state.clone());
+                        changed = true;
                     }
                 }
             }
@@ -250,6 +253,11 @@ impl SystemState {
                 let other_epoch = other.hall_epoch[floor][dir];
 
                 if other_epoch > self_epoch {
+                    if self.hall_epoch[floor][dir] != other_epoch
+                        || self.hall_requests[floor][dir] != other.hall_requests[floor][dir]
+                    {
+                        changed = true;
+                    }
                     self.hall_epoch[floor][dir] = other_epoch;
                     self.hall_requests[floor][dir] = other.hall_requests[floor][dir];
                     continue;
@@ -271,12 +279,19 @@ impl SystemState {
                 let other_clear = !request_other && other.can_clear_order(floor, dir);
 
                 if self_clear || other_clear {
-                    self.hall_requests[floor][dir] = false; // Clear the order
+                    if self.hall_requests[floor][dir] {
+                        self.hall_requests[floor][dir] = false; // Clear the order
+                        changed = true;
+                    }
                 } else {
-                    self.hall_requests[floor][dir] = true;
+                    if !self.hall_requests[floor][dir] {
+                        self.hall_requests[floor][dir] = true;
+                        changed = true;
+                    }
                 }
             }
         }
+        changed
     }
 }
 

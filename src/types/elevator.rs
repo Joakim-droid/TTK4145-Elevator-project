@@ -1,5 +1,6 @@
 use crate::{config::NUM_FLOORS, types::direction::Direction};
 use serde::{Deserialize, Serialize};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub enum Behaviour {
@@ -22,7 +23,18 @@ pub struct ElevatorState {
     obstruction: bool,
     emergency_stop: bool,
     door_open_counter: u64,
+    boot_id: u64,
     seq: u64,
+}
+
+fn new_boot_id() -> u64 {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    now.as_secs()
+        .saturating_mul(1_000_000_000)
+        .saturating_add(now.subsec_nanos() as u64)
+        ^ (std::process::id() as u64)
 }
 
 impl ElevatorState {
@@ -133,8 +145,8 @@ impl ElevatorState {
         }
     }
 
-    pub fn get_seq(&self) -> u64 {
-        self.seq
+    pub fn is_newer_than(&self, other: &ElevatorState) -> bool {
+        self.boot_id > other.boot_id || (self.boot_id == other.boot_id && self.seq > other.seq)
     }
 
     pub fn set_obstruction(&mut self, val: bool) {
@@ -144,13 +156,18 @@ impl ElevatorState {
         }
     }
 
-    pub fn recover_from_backup(&mut self, backup: &ElevatorState) {
-        self.seq = backup.seq;
+    pub fn recover_from_backup(&mut self, backup: &ElevatorState) -> bool {
+        let mut changed = false;
         for f in 0..crate::config::NUM_FLOORS {
-            if backup.cab_requests[f] {
+            if backup.cab_requests[f] && !self.cab_requests[f] {
                 self.cab_requests[f] = true;
+                changed = true;
             }
         }
+        if changed {
+            self.bump_seq();
+        }
+        changed
     }
 
     pub fn reset_seq(&mut self) {
@@ -168,6 +185,7 @@ impl Default for ElevatorState {
             door_open_counter: 0,
             obstruction: false,
             emergency_stop: false,
+            boot_id: new_boot_id(),
             seq: 0,
         }
     }

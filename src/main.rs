@@ -66,22 +66,24 @@ fn main() {
     loop {
         select! {
             recv(peer_state_rx) -> msg => {
-                println!("Received state from network");
                 if let Ok(fetched_state) = msg {
-                    system_state.merge_with(&fetched_state);
-                    println!("{system_state}");
-                    // TODO: Used for debugging in test script, remove later
-                    std::io::stdout().flush().unwrap();
-                    let order_floor = assigner::decide_next_order(&system_state);
+                    if system_state.merge_with(&fetched_state) {
+                        println!("Received state from network");
+                        println!("{system_state}");
+                        // TODO: Used for debugging in test script, remove later
+                        std::io::stdout().flush().unwrap();
+                        let order_floor = assigner::decide_next_order(&system_state);
 
-                    fsm::step(
-                        &elevator_driver,
-                        &mut system_state,
-                        order_floor,
-                        event_tx.clone()
-                    );
+                        fsm::step(
+                            &elevator_driver,
+                            &mut system_state,
+                            order_floor,
+                            event_tx.clone()
+                        );
+                        system_state.update_lights(&elevator_driver);
+                        state_to_broadcast_tx.send(system_state.clone()).unwrap();
+                    }
                 }
-                system_state.update_lights(&elevator_driver);
             }
 
             recv(event_rx) -> event => {

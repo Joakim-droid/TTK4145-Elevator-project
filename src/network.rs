@@ -1,13 +1,18 @@
-use crate::types::{event::Event, systemstate::SystemState};
-use crossbeam_channel::{self as cbc, Receiver, Sender};
+use crate::{
+    config::{
+        PEER_DISCOVERY_INTERVAL, PEER_DISCOVERY_TIMEOUT, STATE_BROADCAST_INTERVAL,
+        STATE_BROADCAST_REDUNDANCY,
+    },
+    types::{event::Event, systemstate::SystemState},
+};
+use crossbeam_channel::{self as cbc, Receiver, Sender, select};
 use network_rust::udpnet::peers::PeerUpdate;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use std::{
     collections::HashMap,
     net::{Ipv4Addr, SocketAddrV4, UdpSocket},
-    str,
-    thread,
-    time::{Duration, Instant},
+    str, thread,
+    time::Instant,
 };
 
 fn new_tx_socket() -> std::io::Result<UdpSocket> {
@@ -39,38 +44,64 @@ pub fn spawn_state_broadcast(
 ) {
     println!("State broadcast spawned on port {}", port);
 
-    thread::spawn(move || {
-        let sock =
-            new_tx_socket().expect("Failed to create state broadcast tx socket");
-        let remote_addr = SocketAddrV4::new(Ipv4Addr::BROADCAST, port);
-        loop {
-            let data = state_rx.recv().expect("State broadcast channel closed");
-            let serialized = serde_json::to_vec(&data).expect("Failed to serialize state");
+    fn send_state(sock: &UdpSocket, remote_addr: SocketAddrV4, data: &SystemState) {
+        let serialized = match serde_json::to_vec(data) {
+            Ok(value) => value,
+            Err(err) => {
+                eprintln!("Failed to serialize state: {err}");
+                return;
+            }
+        };
+
+        for _ in 0..STATE_BROADCAST_REDUNDANCY {
             if let Err(err) = sock.send_to(&serialized, remote_addr) {
                 eprintln!("State broadcast send failed: {err}");
+            }
+        }
+    }
+
+    thread::spawn(move || {
+        let sock = new_tx_socket().expect("Failed to create state broadcast tx socket");
+        let remote_addr = SocketAddrV4::new(Ipv4Addr::BROADCAST, port);
+        let ticker = cbc::tick(STATE_BROADCAST_INTERVAL);
+        let mut latest_state: Option<SystemState> = None;
+
+        loop {
+            select! {
+                recv(state_rx) -> msg => {
+                    let Ok(data) = msg else {
+                        break;
+                    };
+                    latest_state = Some(data);
+                    if let Some(state) = latest_state.as_ref() {
+                        send_state(&sock, remote_addr, state);
+                    }
+                }
+                recv(ticker) -> _ => {
+                    if let Some(state) = latest_state.as_ref() {
+                        send_state(&sock, remote_addr, state);
+                    }
+                }
             }
         }
     });
 
     thread::spawn(move || {
-        let sock =
-            new_rx_socket(port).expect("Failed to bind state broadcast rx socket");
+        let sock = new_rx_socket(port).expect("Failed to bind state broadcast rx socket");
         let mut buf = [0; 4096];
 
         loop {
             match sock.recv_from(&mut buf) {
-                Ok((n, _)) => {
-                    match serde_json::from_slice::<SystemState>(&buf[..n]) {
-                        Ok(state) => {
-                            if state.get_my_id() != my_id {
-                                peer_state_tx.send(state).ok();
-                            }
-                        }
-                        Err(err) => {
-                            eprintln!("Invalid state broadcast packet: {err}");
+                Ok((n, _)) => match serde_json::from_slice::<SystemState>(&buf[..n]) {
+                    Ok(state) => {
+                        if state.get_my_id() != my_id {
+                            peer_state_tx.send(state).ok();
                         }
                     }
-                }
+                    Err(err) => {
+                        eprintln!("Invalid state broadcast packet: {err}");
+                    }
+                },
                 Err(err) => eprintln!("State broadcast receive failed: {err}"),
             }
         }
@@ -82,10 +113,9 @@ pub fn spawn_peer_discovery(my_id: String, event_tx: Sender<Event>, port: u16) {
 
     let tx_id = my_id.clone();
     thread::spawn(move || {
-        let sock =
-            new_tx_socket().expect("Failed to create peer discovery tx socket");
+        let sock = new_tx_socket().expect("Failed to create peer discovery tx socket");
         let remote_addr = SocketAddrV4::new(Ipv4Addr::BROADCAST, port);
-        let ticker = cbc::tick(Duration::from_millis(15));
+        let ticker = cbc::tick(PEER_DISCOVERY_INTERVAL);
         loop {
             if ticker.recv().is_err() {
                 break;
@@ -97,9 +127,8 @@ pub fn spawn_peer_discovery(my_id: String, event_tx: Sender<Event>, port: u16) {
     });
 
     thread::spawn(move || {
-        let timeout = Duration::from_millis(500);
-        let sock =
-            new_rx_socket(port).expect("Failed to bind peer discovery rx socket");
+        let timeout = PEER_DISCOVERY_TIMEOUT;
+        let sock = new_rx_socket(port).expect("Failed to bind peer discovery rx socket");
         sock.set_read_timeout(Some(timeout))
             .expect("Failed to configure peer discovery timeout");
 

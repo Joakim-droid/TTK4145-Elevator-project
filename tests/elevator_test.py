@@ -172,6 +172,20 @@ def _open_tmux_viewer():
     )
 
 
+def _node_launch_command(node_id, port):
+    binary = os.path.join(ROOT_DIR, "target", "debug", "TTK4145-Elevator-project")
+    base_cmd = [binary, node_id, str(port), str(BCAST_PORT)]
+
+    if stdbuf := shutil.which("stdbuf"):
+        return [stdbuf, "-oL", *base_cmd]
+    if gstdbuf := shutil.which("gstdbuf"):
+        return [gstdbuf, "-oL", *base_cmd]
+    if script := shutil.which("script"):
+        # macOS/BSD typically ship `script`, which gives us a PTY and line-flushed logs.
+        return [script, "-q", "/dev/null", *base_cmd]
+    return base_cmd
+
+
 def start_node(node_id):
     if node_id in node_processes and node_processes[node_id][0].poll() is None:
         return
@@ -181,20 +195,14 @@ def start_node(node_id):
     print(f"  [+] Starting {node_id}  →  {log_path}")
     # Use append mode so restarts within a scenario don't overwrite previous logs
     log_file = open(log_path, "a")
+    launch_cmd = _node_launch_command(node_id, port)
     p = subprocess.Popen(
-        [
-            "stdbuf",
-            "-oL",
-            os.path.join(ROOT_DIR, "target", "debug", "TTK4145-Elevator-project"),
-            node_id,
-            str(port),
-            str(BCAST_PORT),
-        ],
+        launch_cmd,
         stdout=log_file,
         stderr=subprocess.STDOUT,
         cwd=ROOT_DIR,
         # Place the process in its own process group so kill_node can send
-        # SIGKILL to the entire group (stdbuf + its Rust child).
+        # SIGKILL to the entire group (wrapper + its Rust child).
         start_new_session=True,
     )
     node_processes[node_id] = (p, log_file)
