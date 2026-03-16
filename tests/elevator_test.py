@@ -28,7 +28,7 @@ NOISE_RULE_PATH = "/tmp/elevator_noise.rule"
 NOISE_CONF_PATH = "/tmp/pf.elevator.conf"
 NOISE_ENABLED = False
 _NOISE_PROCESS = None
-TEST_OPTIONS = {"noise": 0, "keep_running": False}
+TEST_OPTIONS = {"noise": 0, "keep_running": False, "manual": False}
 
 # Simulator keyboard mappings (from SimElevatorServer docs)
 _HALL_UP_KEYS = "qwertyui"
@@ -58,6 +58,14 @@ def parse_args():
         "--keep-running",
         action="store_true",
         help="Keep simulators and nodes alive after the suite finishes.",
+    )
+    parser.add_argument(
+        "--manual",
+        action="store_true",
+        help=(
+            "Start simulators and nodes without running any automated scenarios. "
+            "Press Ctrl+C to stop."
+        ),
     )
     return parser.parse_args()
 
@@ -145,8 +153,18 @@ def apply_noise(percent: int):
 
         # Run packetloss.sh with sudo. Use -i (input) for discovery ports.
         # --unsafe prevents the safety timeout from stopping it early.
-        cmd = ["sudo", script_path, str(percent), "-i", "--unsafe", str(PEER_DISCOVERY_PORT), str(BCAST_PORT)]
-        print(f"[*] Enabling {percent}% packet loss on UDP {PEER_DISCOVERY_PORT}/{BCAST_PORT} (Linux/iptables)...")
+        cmd = [
+            "sudo",
+            script_path,
+            str(percent),
+            "-i",
+            "--unsafe",
+            str(PEER_DISCOVERY_PORT),
+            str(BCAST_PORT),
+        ]
+        print(
+            f"[*] Enabling {percent}% packet loss on UDP {PEER_DISCOVERY_PORT}/{BCAST_PORT} (Linux/iptables)..."
+        )
         _NOISE_PROCESS = subprocess.Popen(cmd, start_new_session=True)
         NOISE_ENABLED = True
     else:
@@ -181,7 +199,7 @@ def cleanup_noise():
                 # Manual fallback cleanup
                 subprocess.run(["sudo", "iptables", "-F"], check=False)
         _NOISE_PROCESS = None
-    
+
     NOISE_ENABLED = False
 
 
@@ -395,14 +413,19 @@ signal.signal(signal.SIGINT, teardown)
 
 
 def get_current_network_state():
-    """Collect one UDP broadcast packet per active node and return a merged view.
+    """Collect UDP broadcast packets for up to 0.5 s and build a merged world-view.
 
-    Opening a fresh socket each call is fine for snapshot checks.  We read
-    packets for up to 0.5 s and accumulate the *most-recent* state for each
-    sender, then merge them into a single dict whose "states" key contains the
-    per-node elevator state (same shape as a single-packet broadcast).
+    Strategy: accumulate every state entry seen from every packet.  When the
+    same node appears in multiple packets, the reporter's *own* entry always
+    wins (authoritative self-report), while third-party entries only fill gaps.
+    This ensures that even if the first packet comes from a node that hasn't
+    yet merged all peers, subsequent packets from those peers fill in the gaps.
     """
-    merged: dict = {}
+    # per_node_best[nid] = (seq, state_dict)
+    # seq is used to prefer a node's own self-report over a peer's stale copy.
+    per_node_best: dict = {}  # nid -> (is_self_report: bool, seq: int, state_dict)
+    base_pkt: dict = {}  # used to carry hall_requests / hall_epoch etc.
+
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         if hasattr(socket, "SO_REUSEPORT"):
@@ -424,21 +447,32 @@ def get_current_network_state():
                 continue
             if "hall_epoch" not in pkt:
                 continue
-            # Each packet is from one reporter and contains its full world-view.
-            # We use the reporter's own entry in "states" as ground truth for
-            # that node, and accumulate it into merged["states"].
             reporter = pkt.get("my_id") or pkt.get("id")
             if not reporter:
                 continue
-            if "states" not in merged:
-                # Bootstrap with first packet's full world view.
-                merged = pkt
-            else:
-                # Overwrite the reporter's own state with their latest broadcast.
-                reporter_state = pkt.get("states", {}).get(reporter)
-                if reporter_state:
-                    merged.setdefault("states", {})[reporter] = reporter_state
-    return merged if merged else None
+            if not base_pkt:
+                base_pkt = pkt
+            # Merge every state entry from this packet into per_node_best.
+            for nid, nstate in pkt.get("states", {}).items():
+                is_self = nid == reporter
+                seq = nstate.get("seq", 0)
+                existing = per_node_best.get(nid)
+                if existing is None:
+                    per_node_best[nid] = (is_self, seq, nstate)
+                else:
+                    ex_self, ex_seq, _ = existing
+                    # Self-report always beats a peer's copy; among same kind, higher seq wins.
+                    if (is_self and not ex_self) or (
+                        is_self == ex_self and seq > ex_seq
+                    ):
+                        per_node_best[nid] = (is_self, seq, nstate)
+
+    if not base_pkt:
+        return None
+
+    merged = dict(base_pkt)
+    merged["states"] = {nid: st for nid, (_, _, st) in per_node_best.items()}
+    return merged
 
 
 def inject_order(order_type, floor, node_id=None):
@@ -537,20 +571,39 @@ def _eval_condition(nstate: dict, key: str, val) -> bool:
 
 
 def wait_for_live_state(
-    expected: dict, timeout: float = 20.0, require_all: bool = True
+    expected: dict,
+    timeout: float = 20.0,
+    require_all: bool = True,
+    require_any: bool = False,
 ) -> bool:
-    """Poll UDP broadcasts until all (or any) nodes in *expected* show the desired state.
+    """Poll UDP broadcasts until nodes in *expected* show the desired state.
 
     Args:
         expected: { node_id: { key: value, ... }, ... }
                   Values may be a list of accepted alternatives, e.g. {"behaviour": ["idle","doorOpen"]}.
-        timeout:  How long to poll in seconds.
-        require_all: If True, ALL nodes in *expected* must match simultaneously.
+        timeout:    How long to poll in seconds.
+        require_all: If True (default), ALL nodes in *expected* must match simultaneously.
                      If False, each node only needs to match at least once.
+        require_any: If True, AT LEAST ONE node from *expected* must match at least once.
+                     Overrides require_all when set to True.
 
     Returns True if the condition was satisfied within the timeout.
     """
-    if require_all:
+    if require_any:
+        # At least one node from the set must match at least once.
+        start = time.time()
+        while time.time() - start < timeout:
+            state = get_current_network_state()
+            if state:
+                for nid, exp in expected.items():
+                    nstate = state.get("states", {}).get(nid)
+                    if nstate is None:
+                        continue
+                    if all(_eval_condition(nstate, k, v) for k, v in exp.items()):
+                        return True
+            time.sleep(0.1)
+        return False
+    elif require_all:
 
         def condition(state):
             for nid, exp in expected.items():
@@ -589,7 +642,11 @@ def wait_for_live_state(
 
 
 def verify_live_state(
-    expected: dict, timeout: float = 20.0, require_all: bool = True, label: str = ""
+    expected: dict,
+    timeout: float = 20.0,
+    require_all: bool = True,
+    require_any: bool = False,
+    label: str = "",
 ) -> bool:
     """Check that nodes reach expected live state within *timeout* seconds.
 
@@ -597,9 +654,16 @@ def verify_live_state(
     Returns True on pass, False on fail, and always prints a clear result line.
     """
     tag = f" ({label})" if label else ""
-    mode = "all simultaneously" if require_all else "each at least once"
+    if require_any:
+        mode = "any one node"
+    elif require_all:
+        mode = "all simultaneously"
+    else:
+        mode = "each at least once"
     print(f"  [live-check{tag}] Waiting up to {timeout}s for {mode}: {expected}")
-    ok = wait_for_live_state(expected, timeout=timeout, require_all=require_all)
+    ok = wait_for_live_state(
+        expected, timeout=timeout, require_all=require_all, require_any=require_any
+    )
     if ok:
         print(f"  [✓] live-check{tag} PASSED")
     else:
@@ -714,9 +778,14 @@ def run_scenarios_from_config():
                 expected = step.get("expected", {})
                 timeout = step.get("timeout", 20.0)
                 require_all = step.get("require_all", True)
+                require_any = step.get("require_any", False)
                 label = step.get("label", "")
                 ok = verify_live_state(
-                    expected, timeout=timeout, require_all=require_all, label=label
+                    expected,
+                    timeout=timeout,
+                    require_all=require_all,
+                    require_any=require_any,
+                    label=label,
                 )
                 if not ok:
                     passed_all = False
@@ -731,8 +800,12 @@ def run_scenarios_from_config():
                 expected = step.get("expected", {})
                 timeout = step.get("timeout", 20.0)
                 require_all = step.get("require_all", True)
+                require_any = step.get("require_any", False)
                 reached = wait_for_live_state(
-                    expected, timeout=timeout, require_all=require_all
+                    expected,
+                    timeout=timeout,
+                    require_all=require_all,
+                    require_any=require_any,
                 )
                 if not reached:
                     print(f"  [!] Timed out waiting for state: {expected}")
@@ -790,6 +863,7 @@ if __name__ == "__main__":
     args = parse_args()
     TEST_OPTIONS["noise"] = max(0, min(100, args.noise))
     TEST_OPTIONS["keep_running"] = args.keep_running
+    TEST_OPTIONS["manual"] = args.manual
 
     os.system("pkill -f SimElevatorServer || true")
     os.system("pkill -f TTK4145-Elevator-project || true")
@@ -807,17 +881,25 @@ if __name__ == "__main__":
         build_project()
         start_simulators()
 
-        passed_all, scenario_results = run_scenarios_from_config()
-
-        print("\n" + "═" * 64)
-        print(" ALL AUTOMATED SCENARIOS COMPLETED")
-        print("═" * 64)
-        print_and_write_summary(scenario_results, logs_dir)
-        if not passed_all:
-            print("[!] One or more scenarios failed.")
-        if TEST_OPTIONS["keep_running"]:
-            print("[*] Press Ctrl+C to stop everything and close the terminals.")
+        if TEST_OPTIONS["manual"]:
+            print("[*] Starting Rust nodes (manual mode — no scenarios will run)...")
+            for node_id in NODES.keys():
+                start_node(node_id)
+            print("[*] All nodes started. Press Ctrl+C to stop everything.")
             while True:
                 time.sleep(1)
+        else:
+            passed_all, scenario_results = run_scenarios_from_config()
+
+            print("\n" + "═" * 64)
+            print(" ALL AUTOMATED SCENARIOS COMPLETED")
+            print("═" * 64)
+            print_and_write_summary(scenario_results, logs_dir)
+            if not passed_all:
+                print("[!] One or more scenarios failed.")
+            if TEST_OPTIONS["keep_running"]:
+                print("[*] Press Ctrl+C to stop everything and close the terminals.")
+                while True:
+                    time.sleep(1)
     finally:
         cleanup_all()

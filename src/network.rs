@@ -1,7 +1,7 @@
 use crate::{
     config::{
-        PEER_DISCOVERY_INTERVAL, PEER_DISCOVERY_TIMEOUT, STATE_BROADCAST_INTERVAL,
-        STATE_BROADCAST_REDUNDANCY,
+        HALL_ORDER_BROADCAST_REDUNDANCY, PEER_DISCOVERY_INTERVAL, PEER_DISCOVERY_TIMEOUT,
+        STATE_BROADCAST_INTERVAL, STATE_BROADCAST_REDUNDANCY,
     },
     types::{event::Event, systemstate::SystemState},
 };
@@ -12,7 +12,7 @@ use std::{
     collections::HashMap,
     net::{Ipv4Addr, SocketAddrV4, UdpSocket},
     str, thread,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 fn new_tx_socket() -> std::io::Result<UdpSocket> {
@@ -40,11 +40,12 @@ pub fn spawn_state_broadcast(
     my_id: String,
     port: u16,
     state_rx: Receiver<SystemState>,
+    eager_state_rx: Receiver<SystemState>,
     peer_state_tx: Sender<SystemState>,
 ) {
     println!("State broadcast spawned on port {}", port);
 
-    fn send_state(sock: &UdpSocket, remote_addr: SocketAddrV4, data: &SystemState) {
+    fn send_state(sock: &UdpSocket, remote_addr: SocketAddrV4, data: &SystemState, n: usize) {
         let serialized = match serde_json::to_vec(data) {
             Ok(value) => value,
             Err(err) => {
@@ -53,7 +54,7 @@ pub fn spawn_state_broadcast(
             }
         };
 
-        for _ in 0..STATE_BROADCAST_REDUNDANCY {
+        for _ in 0..n {
             if let Err(err) = sock.send_to(&serialized, remote_addr) {
                 eprintln!("State broadcast send failed: {err}");
             }
@@ -74,12 +75,21 @@ pub fn spawn_state_broadcast(
                     };
                     latest_state = Some(data);
                     if let Some(state) = latest_state.as_ref() {
-                        send_state(&sock, remote_addr, state);
+                        send_state(&sock, remote_addr, state, STATE_BROADCAST_REDUNDANCY);
+                    }
+                }
+                recv(eager_state_rx) -> msg => {
+                    let Ok(data) = msg else {
+                        break;
+                    };
+                    latest_state = Some(data);
+                    if let Some(state) = latest_state.as_ref() {
+                        send_state(&sock, remote_addr, state, HALL_ORDER_BROADCAST_REDUNDANCY);
                     }
                 }
                 recv(ticker) -> _ => {
                     if let Some(state) = latest_state.as_ref() {
-                        send_state(&sock, remote_addr, state);
+                        send_state(&sock, remote_addr, state, STATE_BROADCAST_REDUNDANCY);
                     }
                 }
             }
@@ -186,4 +196,26 @@ pub fn spawn_peer_discovery(my_id: String, event_tx: Sender<Event>, port: u16) {
             }
         }
     });
+}
+
+/// Drain peer-broadcast packets for 2 seconds so we can recover cab orders
+/// that peers still hold from our previous boot, before our fresh (empty)
+/// state overwrites their copy.
+///
+/// 2 s > PEER_DISCOVERY_TIMEOUT (1500 ms): a node that started up to 1.5 s
+/// late will still have been discovered and heard from before we enter the
+/// main loop.
+pub fn startup_peer_sync(peer_state_rx: &Receiver<SystemState>, system_state: &mut SystemState) {
+    let sync_deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let remaining = sync_deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        // Use `if let Ok` so a timeout (Err) does NOT break the loop early.
+        // The loop must run until the wall-clock deadline expires (see AGENTS.md §15).
+        if let Ok(peer_state) = peer_state_rx.recv_timeout(remaining) {
+            system_state.merge_with(&peer_state);
+        }
+    }
 }

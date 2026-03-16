@@ -8,3 +8,4 @@ pub const PEER_DISCOVERY_INTERVAL: Duration = Duration::from_millis(100);
 pub const PEER_DISCOVERY_TIMEOUT: Duration = Duration::from_millis(1500);
 pub const STATE_BROADCAST_INTERVAL: Duration = Duration::from_millis(250);
 pub const STATE_BROADCAST_REDUNDANCY: usize = 2;
+pub const HALL_ORDER_BROADCAST_REDUNDANCY: usize = 6;

@@ -104,6 +104,136 @@
                     "message": "Scenario completed successfully. Order fully processed."
                 }
             ]
+        },
+        {
+            "name": "S2: Hall Order Survives Crash Within Broadcast Window",
+            "description": "Inject a hall order on elev1, kill elev1 after 600ms (before the second periodic broadcast fires reliably), and verify that elev2 or elev3 received the order via eager broadcast and serves it.",
+            "steps": [
+                {
+                    "action": "print",
+                    "message": "Step 1: Verify all elevators are homed and idle."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "all-homed-before-s2",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev2": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev3": {"floor": 0, "behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step 2: Inject HallUp at floor 2 into elev1's simulator."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_up",
+                    "floor": 2,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Step 3: Wait 600ms — enough for eager broadcast, tight enough to test the crash window."
+                },
+                {
+                    "action": "sleep",
+                    "duration": 0.6
+                },
+                {
+                    "action": "print",
+                    "message": "Step 4: Kill elev1. elev2 and elev3 must now serve the hall order."
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Step 5: Verify a surviving elevator served or is serving the hall order at floor 2."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "surviving-peer-served-floor2",
+                    "timeout": 30.0,
+                    "require_any": true,
+                    "expected": {
+                        "elev2": {"floor": 2, "behaviour": ["moving", "doorOpen", "idle"]},
+                        "elev3": {"floor": 2, "behaviour": ["moving", "doorOpen", "idle"]}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step 6: Wait for serving elevator to finish (idle at floor 2)."
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 15.0,
+                    "require_any": true,
+                    "expected": {
+                        "elev2": {"floor": 2, "behaviour": "idle"},
+                        "elev3": {"floor": 2, "behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step 7: Verify logs confirm the hall order was placed and cleared."
+                },
+                {
+                    "action": "verify_logs_extended",
+                    "checks": [
+                        {
+                            "type": "hall_order_served",
+                            "floor": 2,
+                            "direction": 0
+                        },
+                        {
+                            "type": "all_hall_orders_cleared"
+                        },
+                        {
+                            "type": "no_order_stuck",
+                            "max_idle_seconds": 30.0
+                        }
+                    ]
+                },
+                {
+                    "action": "print",
+                    "message": "Step 8: Restart elev1 to restore the cluster."
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Step 9: Verify elev1 reconnects and stays idle — it must NOT re-serve the already-cleared order."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-reconnected-idle",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "sleep",
+                    "duration": 5
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-still-idle-no-spurious-serve",
+                    "timeout": 5.0,
+                    "expected": {
+                        "elev1": {"behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "S2 complete: hall order survived crash-before-broadcast, served by surviving peer, elev1 reconnected cleanly."
+                }
+            ]
         }
     ]
 }

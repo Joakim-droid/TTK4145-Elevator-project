@@ -176,8 +176,12 @@ impl SystemState {
                 }
             }
             Direction::Stop => {
-                clear_up = true;
-                clear_down = true;
+                // If stopped at a floor, we can clear both directions, but prioritize the one that is actually ordered
+                if self.hall_requests[floor as usize][0] {
+                    clear_up = true;
+                } else if self.hall_requests[floor as usize][1] {
+                    clear_down = true;
+                }
             }
         }
 

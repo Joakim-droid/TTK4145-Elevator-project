@@ -4,8 +4,11 @@ use crate::{
         initialize_elevator_position, spawn_button_poller, spawn_floor_poller,
         spawn_obstruction_poller, spawn_stop_button_poller,
     },
-    network::{spawn_peer_discovery, spawn_state_broadcast},
-    types::{direction::Direction, elevator::Behaviour, event::Event, systemstate::SystemState},
+    network::{spawn_peer_discovery, spawn_state_broadcast, startup_peer_sync},
+    types::{
+        direction::Direction, elevator::Behaviour, event::Event, orders::OrderType,
+        systemstate::SystemState,
+    },
 };
 use crossbeam_channel::{self as cbc, select};
 use driver_rust::elevio::elev::Elevator;
@@ -42,6 +45,7 @@ fn main() {
 
     let (event_tx, event_rx) = cbc::unbounded::<Event>();
     let (state_to_broadcast_tx, state_to_broadcast_rx) = cbc::unbounded::<SystemState>();
+    let (eager_broadcast_tx, eager_broadcast_rx) = cbc::unbounded::<SystemState>();
     let (peer_state_tx, peer_state_rx) = cbc::unbounded::<SystemState>();
 
     initialize_elevator_position(&elevator_driver, &mut system_state);
@@ -55,6 +59,7 @@ fn main() {
         my_id.clone(),
         bcast_port,
         state_to_broadcast_rx,
+        eager_broadcast_rx,
         peer_state_tx,
     );
 
@@ -62,6 +67,26 @@ fn main() {
     println!("{system_state}");
     // TODO: Used for debugging in test script, remove later
     std::io::stdout().flush().unwrap();
+
+    // Prime the broadcast ticker before the sync window so peers receive our
+    // heartbeats and can send us their state (including our backed-up cab orders).
+    // Without this, all nodes are silent during the sync window and never discover
+    // each other on a fresh cluster start.
+    state_to_broadcast_tx.send(system_state.clone()).unwrap();
+
+    startup_peer_sync(&peer_state_rx, &mut system_state);
+
+    println!("Post-sync state:");
+    println!("{system_state}");
+    std::io::stdout().flush().unwrap();
+
+    // Send the recovered (merged) state so peers learn our final post-sync view.
+    state_to_broadcast_tx.send(system_state.clone()).unwrap();
+
+    // The last goal floor assigned to this elevator. Kept across floor-reached events
+    // so that the FSM can open the door upon arrival even if the assigner transiently
+    // assigns the order to another elevator at the exact moment we arrive.
+    let mut current_goal: Option<u8> = assigner::decide_next_order(&system_state);
 
     loop {
         select! {
@@ -72,12 +97,12 @@ fn main() {
                         println!("{system_state}");
                         // TODO: Used for debugging in test script, remove later
                         std::io::stdout().flush().unwrap();
-                        let order_floor = assigner::decide_next_order(&system_state);
+                        current_goal = assigner::decide_next_order(&system_state);
 
                         fsm::step(
                             &elevator_driver,
                             &mut system_state,
-                            order_floor,
+                            current_goal,
                             event_tx.clone()
                         );
                         system_state.update_lights(&elevator_driver);
@@ -99,26 +124,40 @@ fn main() {
                             elevator_driver.motor_direction(Direction::Stop.into());
                         }
 
-                        let order_floor = assigner::decide_next_order(&system_state);
-
+                        // Use the cached goal so the FSM opens the door upon arrival
+                        // even if the assigner transiently reassigns this order to
+                        // another elevator at the exact moment we reach the floor.
                         fsm::step(
                             &elevator_driver,
                             &mut system_state,
-                            order_floor,
+                            current_goal,
                             event_tx.clone()
                         );
+
+                        // Refresh the goal after FSM has processed the arrival
+                        // (the order may have been cleared by clear_order above).
+                        current_goal = assigner::decide_next_order(&system_state);
 
                     },
 
                     Ok(Event::ButtonPressed(floor,order)) => {
                         system_state.add_order(floor, order);
 
-                        let next_order =  assigner::decide_next_order(&system_state);
+                        // For hall orders, send an immediate high-redundancy broadcast
+                        // to minimise the crash window during which no peer has seen the order.
+                        match order {
+                            OrderType::HallUp | OrderType::HallDown => {
+                                eager_broadcast_tx.send(system_state.clone()).unwrap();
+                            }
+                            OrderType::Cab => {}
+                        }
+
+                        current_goal = assigner::decide_next_order(&system_state);
 
                         fsm::step(
                             &elevator_driver,
                             &mut system_state,
-                            next_order,
+                            current_goal,
                             event_tx.clone()
                         );
                     },
@@ -133,11 +172,11 @@ fn main() {
                             system_state.peer_lost(id);
                         }
 
-                        let next_order = assigner::decide_next_order(&system_state);
+                        current_goal = assigner::decide_next_order(&system_state);
                         fsm::step(
                             &elevator_driver,
                             &mut system_state,
-                            next_order,
+                            current_goal,
                             event_tx.clone()
                         );
                     },
@@ -153,18 +192,17 @@ fn main() {
                                     fsm::spawn_door_timer(new_id, event_tx.clone());
                                 }
                             }
-                            return;
-                        }
-
-                        if my_state.get_current_timer_id() == timer_id {
+                            // Use `continue` (via falling through to end of match arm)
+                            // instead of `return` to avoid exiting main().
+                        } else if my_state.get_current_timer_id() == timer_id {
                             elevator_driver.door_light(false);
                             my_state.close_door();
 
-                            let next_order = assigner::decide_next_order(&system_state);
+                            current_goal = assigner::decide_next_order(&system_state);
                             fsm::step(
-                                &elevator_driver, 
-                                &mut system_state, 
-                                next_order, 
+                                &elevator_driver,
+                                &mut system_state,
+                                current_goal,
                                 event_tx.clone()
                             );
                         } else {
@@ -181,6 +219,7 @@ fn main() {
                             // Keep door open and invalidate any pending timeout
                             if let Some(new_id) = my_state.open_door() {
                                 elevator_driver.door_light(true);
+                                let _ = new_id;
                             }
                         } else {
                             if let Some(new_id) = my_state.open_door() {
