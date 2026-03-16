@@ -19,7 +19,7 @@ BCAST_PORT = 16659
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Keep the scenario config next to this test file.
 TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_FILE = os.path.join(TESTS_DIR, "scenarios.json")
+CONFIG_FILE = os.path.join(TESTS_DIR, "scenariosV2.json")
 
 node_processes = {}
 _current_scenario: dict = {}  # set before each scenario runs
@@ -27,6 +27,7 @@ CURRENT_LOG_DIR = os.path.join(TESTS_DIR, "logs")
 NOISE_RULE_PATH = "/tmp/elevator_noise.rule"
 NOISE_CONF_PATH = "/tmp/pf.elevator.conf"
 NOISE_ENABLED = False
+_NOISE_PROCESS = None
 TEST_OPTIONS = {"noise": 0, "keep_running": False}
 
 # Simulator keyboard mappings (from SimElevatorServer docs)
@@ -108,51 +109,79 @@ def print_and_write_summary(results: list[dict], logs_dir: str):
 
 
 def apply_noise(percent: int):
-    global NOISE_ENABLED
+    global NOISE_ENABLED, _NOISE_PROCESS
     if percent <= 0:
         return
 
-    if platform.system() != "Darwin":
-        raise RuntimeError("--noise is currently only supported on macOS")
+    system = platform.system()
+    if system == "Darwin":
+        rule = (
+            "block drop in quick proto udp from any to any "
+            f"port {{{PEER_DISCOVERY_PORT},{BCAST_PORT}}} probability {percent}%\n"
+        )
 
-    rule = (
-        "block drop in quick proto udp from any to any "
-        f"port {{{PEER_DISCOVERY_PORT},{BCAST_PORT}}} probability {percent}%\n"
-    )
+        with open(NOISE_RULE_PATH, "w") as f:
+            f.write(rule)
 
-    with open(NOISE_RULE_PATH, "w") as f:
-        f.write(rule)
+        with open("/etc/pf.conf", "r") as f:
+            base_pf = f.read()
 
-    with open("/etc/pf.conf", "r") as f:
-        base_pf = f.read()
+        with open(NOISE_CONF_PATH, "w") as f:
+            f.write(base_pf)
+            f.write('\nanchor "elevator_noise"\n')
+            f.write(f'load anchor "elevator_noise" from "{NOISE_RULE_PATH}"\n')
 
-    with open(NOISE_CONF_PATH, "w") as f:
-        f.write(base_pf)
-        f.write('\nanchor "elevator_noise"\n')
-        f.write(f'load anchor "elevator_noise" from "{NOISE_RULE_PATH}"\n')
+        print(
+            f"[*] Enabling {percent}% packet loss on UDP ports {PEER_DISCOVERY_PORT} and {BCAST_PORT}..."
+        )
+        subprocess.run(["sudo", "pfctl", "-f", NOISE_CONF_PATH], check=True)
+        subprocess.run(["sudo", "pfctl", "-e"], check=True)
+        subprocess.run(["sudo", "pfctl", "-a", "elevator_noise", "-sr"], check=True)
+        NOISE_ENABLED = True
+    elif system == "Linux":
+        script_path = os.path.join(ROOT_DIR, "packetloss.sh")
+        if not os.path.exists(script_path):
+            raise RuntimeError(f"packetloss.sh not found at {script_path}")
 
-    print(
-        f"[*] Enabling {percent}% packet loss on UDP ports {PEER_DISCOVERY_PORT} and {BCAST_PORT}..."
-    )
-    subprocess.run(["sudo", "pfctl", "-f", NOISE_CONF_PATH], check=True)
-    subprocess.run(["sudo", "pfctl", "-e"], check=True)
-    subprocess.run(["sudo", "pfctl", "-a", "elevator_noise", "-sr"], check=True)
-    NOISE_ENABLED = True
+        # Run packetloss.sh with sudo. Use -i (input) for discovery ports.
+        # --unsafe prevents the safety timeout from stopping it early.
+        cmd = ["sudo", script_path, str(percent), "-i", "--unsafe", str(PEER_DISCOVERY_PORT), str(BCAST_PORT)]
+        print(f"[*] Enabling {percent}% packet loss on UDP {PEER_DISCOVERY_PORT}/{BCAST_PORT} (Linux/iptables)...")
+        _NOISE_PROCESS = subprocess.Popen(cmd, start_new_session=True)
+        NOISE_ENABLED = True
+    else:
+        raise RuntimeError(f"--noise is not supported on {system}")
 
 
 def cleanup_noise():
-    global NOISE_ENABLED
+    global NOISE_ENABLED, _NOISE_PROCESS
     if not NOISE_ENABLED:
         return
 
-    print("[*] Disabling packet loss rules...")
-    subprocess.run(["sudo", "pfctl", "-f", "/etc/pf.conf"], check=False)
-    subprocess.run(["sudo", "pfctl", "-d"], check=False)
-    for path in (NOISE_RULE_PATH, NOISE_CONF_PATH):
-        try:
-            os.remove(path)
-        except FileNotFoundError:
-            pass
+    system = platform.system()
+    if system == "Darwin":
+        print("[*] Disabling packet loss rules...")
+        subprocess.run(["sudo", "pfctl", "-f", "/etc/pf.conf"], check=False)
+        subprocess.run(["sudo", "pfctl", "-d"], check=False)
+        for path in (NOISE_RULE_PATH, NOISE_CONF_PATH):
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                pass
+    elif system == "Linux":
+        if _NOISE_PROCESS and _NOISE_PROCESS.poll() is None:
+            print("[*] Stopping packet loss script...")
+            try:
+                # Killing the process group sends the signal to both sudo and the bash script.
+                # SIGINT triggers the trap cleanup in packetloss.sh.
+                os.killpg(os.getpgid(_NOISE_PROCESS.pid), signal.SIGINT)
+                _NOISE_PROCESS.wait(timeout=5)
+            except Exception as e:
+                print(f"[!] Error stopping noise process: {e}")
+                # Manual fallback cleanup
+                subprocess.run(["sudo", "iptables", "-F"], check=False)
+        _NOISE_PROCESS = None
+    
     NOISE_ENABLED = False
 
 

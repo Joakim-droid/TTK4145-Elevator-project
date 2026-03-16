@@ -1,0 +1,109 @@
+{
+    "scenarios": [
+        {
+            "name": "S1: Cab Order Persistence across Crash",
+            "description": "Home all elevators, send elev1 a cab order to floor 4, kill it mid-journey, then reboot and verify the order is still served.",
+            "steps": [
+                {
+                    "action": "print",
+                    "message": "Step 1: Verify all elevators are homed to floor 0."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "all-homed-at-start",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev2": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev3": {"floor": 0, "behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step 2: Inject cab order to floor 4 (index 3) for elev1."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "cab",
+                    "floor": 3,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Step 3: Wait for elev1 to start moving."
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 5.0,
+                    "expected": {
+                        "elev1": {"behaviour": "moving"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step 4: Kill elev1 mid-journey."
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 4
+                },
+                {
+                    "action": "print",
+                    "message": "Step 5: Reboot elev1."
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Step 6: Verify elev1 resumes and completes the cab order at floor 4."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-resumed-and-finished",
+                    "timeout": 20.0,
+                    "expected": {
+                        "elev1": {
+                            "floor": 3,
+                            "behaviour": ["doorOpen", "idle"]
+                        }
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step 7: Wait for elev1 to close doors and become idle."
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 10.0,
+                    "expected": {
+                        "elev1": {
+                            "floor": 3,
+                            "behaviour": "idle"
+                        }
+                    }
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-final-idle-check",
+                    "timeout": 5.0,
+                    "expected": {
+                        "elev1": {
+                            "floor": 3,
+                            "behaviour": "idle"
+                        }
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Scenario completed successfully. Order fully processed."
+                }
+            ]
+        }
+    ]
+}
