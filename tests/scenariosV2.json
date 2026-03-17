@@ -800,5 +800,338 @@
                 }
             ]
         }
+        ,
+        {
+            "name": "S5: Network Isolation — Disconnected Elevator Serves Existing and New Calls",
+            "description": "Three-part test of the spec requirement that a disconnected elevator must continue serving all active calls and accept new cab calls without requiring a restart. Part A: elev1 has hall (floor 1 and floor 2) and cab (floor 3) orders in its state before peers are killed; it must serve all three stops alone while isolated. Part B: a new cab call (floor 0) is injected while elev1 is isolated; it must react and serve it. Part C: peers are restarted and the cluster reforms cleanly with no spurious re-serves. Note: hall_up floor 3 does not exist — the top floor has no up button.",
+            "steps": [
+                {
+                    "action": "print",
+                    "message": "=== Part A: Serve pre-loaded orders while isolated ==="
+                },
+                {
+                    "action": "print",
+                    "message": "Step A1: Verify all elevators are homed and idle at floor 0."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "all-homed-before-s5",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev2": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev3": {"floor": 0, "behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step A2: Inject hall_up at floor 1 on elev1's simulator."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_up",
+                    "floor": 1,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 0.5
+                },
+                {
+                    "action": "print",
+                    "message": "Step A3: Inject hall_up at floor 2 on elev1's simulator. Note: hall_up floor 3 does not exist (top floor has no up button); floor 2 is the highest valid hall_up."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_up",
+                    "floor": 2,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 0.5
+                },
+                {
+                    "action": "print",
+                    "message": "Step A4: Inject cab floor 3 on elev1 — a personal cab order at the top floor."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "cab",
+                    "floor": 3,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Step A5: Sleep 1s to let the eager broadcast propagate all three orders into elev1's SystemState before isolation begins."
+                },
+                {
+                    "action": "sleep",
+                    "duration": 1
+                },
+                {
+                    "action": "print",
+                    "message": "Step A6: Kill elev2 and elev3 — simulating network isolation for elev1."
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev2"
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev3"
+                },
+                {
+                    "action": "print",
+                    "message": "Step A7: Sleep 2s — peer-discovery timeout is 1500ms. elev1 must mark both peers dead and re-run the assigner as a solo node before we assert any behaviour."
+                },
+                {
+                    "action": "sleep",
+                    "duration": 2
+                },
+                {
+                    "action": "print",
+                    "message": "Step A8: Verify elev1 starts moving — it must have self-assigned the pending orders."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-moving-after-isolation",
+                    "timeout": 8.0,
+                    "expected": {
+                        "elev1": {"behaviour": "moving"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step A9: Wait for elev1 to arrive at floor 1 and open its door (first pre-loaded hall_up order). Non-asserting — transient state may be missed by polling."
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 20.0,
+                    "expected": {
+                        "elev1": {"floor": 1, "behaviour": "doorOpen"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step A10: Wait for elev1 to close its door and start moving toward floor 2."
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 10.0,
+                    "expected": {
+                        "elev1": {"behaviour": "moving"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step A11: Wait for elev1 to arrive at floor 2 and open its door (hall_up floor 2 order). Non-asserting — transient state may be missed by polling."
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 2, "behaviour": "doorOpen"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step A12: Wait for elev1 to close its door and start moving toward floor 3."
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 10.0,
+                    "expected": {
+                        "elev1": {"behaviour": "moving"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step A13: Wait for elev1 to arrive at floor 3 and open its door (cab order). Non-asserting — transient state may be missed by polling."
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 3, "behaviour": "doorOpen"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step A14: Wait for elev1 to close its door and become idle at floor 3."
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 10.0,
+                    "expected": {
+                        "elev1": {"floor": 3, "behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-isolated-served-all",
+                    "timeout": 5.0,
+                    "expected": {
+                        "elev1": {"floor": 3, "behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "=== Part B: Accept new cab calls while isolated ==="
+                },
+                {
+                    "action": "print",
+                    "message": "Step B1: Inject cab floor 0 on elev1 while it is isolated at floor 3. The spec requires it to accept and serve new cab calls even while disconnected."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "cab",
+                    "floor": 0,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Step B2: Verify elev1 starts moving toward floor 0 within 8s."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-moving-to-new-cab",
+                    "timeout": 8.0,
+                    "expected": {
+                        "elev1": {"behaviour": "moving"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step B3: Verify elev1 arrives at floor 0 and opens its door — it served the new cab call while isolated."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-served-new-cab-while-isolated",
+                    "timeout": 25.0,
+                    "expected": {
+                        "elev1": {"floor": 0, "behaviour": "doorOpen"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step B4: Wait for elev1 to become idle at floor 0."
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 10.0,
+                    "expected": {
+                        "elev1": {"floor": 0, "behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-idle-after-new-cab",
+                    "timeout": 5.0,
+                    "expected": {
+                        "elev1": {"floor": 0, "behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "=== Part C: Rejoin cluster without restart ==="
+                },
+                {
+                    "action": "print",
+                    "message": "Step C1: Restart elev2 and elev3. The spec says no manual reinitialization should be required after network loss — elev1 must rejoin automatically."
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev2"
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev3"
+                },
+                {
+                    "action": "print",
+                    "message": "Step C2: Sleep 5s to allow peer discovery, state broadcasts, and cross-node merge to complete."
+                },
+                {
+                    "action": "sleep",
+                    "duration": 5
+                },
+                {
+                    "action": "print",
+                    "message": "Step C3: Verify all three nodes are visible and stable — no phantom orders, no spurious movement."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "cluster-restored-after-isolation",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"behaviour": ["idle", "doorOpen"]},
+                        "elev2": {"behaviour": ["idle", "doorOpen"]},
+                        "elev3": {"behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step C4: Sleep 3s then verify elev1 has not started moving spontaneously — no phantom order or spurious re-serve."
+                },
+                {
+                    "action": "sleep",
+                    "duration": 3
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-no-spurious-movement-after-rejoin",
+                    "timeout": 5.0,
+                    "expected": {
+                        "elev1": {"behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step C5: Log verification — all orders served, no orders stuck, correct behaviour sequence."
+                },
+                {
+                    "action": "verify_logs_extended",
+                    "checks": [
+                        {
+                            "type": "all_hall_orders_cleared"
+                        },
+                        {
+                            "type": "no_order_stuck",
+                            "max_idle_seconds": 90.0
+                        },
+                        {
+                            "type": "hall_order_served",
+                            "floor": 1,
+                            "direction": 0
+                        },
+                        {
+                            "type": "hall_order_served",
+                            "floor": 2,
+                            "direction": 0
+                        },
+                        {
+                            "type": "cab_order_served",
+                            "node_id": "elev1",
+                            "floor": 3
+                        },
+                        {
+                            "type": "cab_order_served",
+                            "node_id": "elev1",
+                            "floor": 0
+                        },
+                        {
+                            "type": "behaviour_sequence",
+                            "node_id": "elev1",
+                            "sequence": ["moving", "doorOpen", "moving", "doorOpen", "moving", "doorOpen", "moving", "doorOpen"]
+                        }
+                    ]
+                },
+                {
+                    "action": "print",
+                    "message": "S5 complete: isolated elevator served pre-loaded hall and cab orders, accepted a new cab call while disconnected, and rejoined the cluster cleanly without restart."
+                }
+            ]
+        }
     ]
 }
