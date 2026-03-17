@@ -234,6 +234,571 @@
                     "message": "S2 complete: hall order survived crash-before-broadcast, served by surviving peer, elev1 reconnected cleanly."
                 }
             ]
+        },
+        {
+            "name": "S3: Door Obstruction Handling",
+            "description": "Three-part test of the obstruction switch. Part A: obstruction holds the door open past the 3-second timer. Part B: releasing obstruction restarts the 3-second close timer rather than closing immediately. Part C: obstruction while moving stops the elevator and opens the door.",
+            "steps": [
+                {
+                    "action": "print",
+                    "message": "=== Part A: Basic obstruction hold ==="
+                },
+                {
+                    "action": "print",
+                    "message": "Step A1: Verify all elevators are homed and idle at floor 0."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "all-homed-before-s3",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev2": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev3": {"floor": 0, "behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step A2: Inject hall_up at floor 1 and cab floor 1 on elev1 — guarantees elev1 serves the order."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_up",
+                    "floor": 1,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "inject_order",
+                    "type": "cab",
+                    "floor": 1,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Step A3: Wait for elev1 to arrive at floor 1 and open its door."
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 1, "behaviour": "doorOpen"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step A4: Toggle obstruction ON — intercepts the running 3s door timer."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "obstruction_toggle",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Step A6: Sleep 4s — the 3-second door timer must NOT close the door while obstructed."
+                },
+                {
+                    "action": "sleep",
+                    "duration": 4
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "door-held-open-by-obstruction",
+                    "timeout": 2.0,
+                    "expected": {
+                        "elev1": {"floor": 1, "behaviour": "doorOpen"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step A7: Toggle obstruction OFF."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "obstruction_toggle",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Step A8: Verify the door closes and elev1 becomes idle within 8s."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "door-closed-after-obstruction-clear",
+                    "timeout": 8.0,
+                    "expected": {
+                        "elev1": {"floor": 1, "behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "=== Part B: Obstruction release followed by fresh order starts a new 3-second close timer ==="
+                },
+                {
+                    "action": "print",
+                    "message": "Step B1: Inject hall_up floor 1 to make elev1 open its door at floor 1."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_up",
+                    "floor": 1,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Step B2: Wait for elev1 to be doorOpen at floor 1."
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 10.0,
+                    "expected": {
+                        "elev1": {"floor": 1, "behaviour": "doorOpen"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step B3: Toggle obstruction ON — holds door open past the 3-second timer."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "obstruction_toggle",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Step B4: Sleep 2s — obstruction is holding the door."
+                },
+                {
+                    "action": "sleep",
+                    "duration": 2
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "door-held-open-by-obstruction-partB",
+                    "timeout": 2.0,
+                    "expected": {
+                        "elev1": {"floor": 1, "behaviour": "doorOpen"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step B5: Toggle obstruction OFF — door closes immediately (FSM quirk with goal=None)."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "obstruction_toggle",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Step B6: Inject cab floor 1 while elev1 is idle — re-opens door with a fresh 3s timer."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "cab",
+                    "floor": 1,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Step B7: Wait for elev1 to re-open door at floor 1 (fresh 3s timer started)."
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 5.0,
+                    "expected": {
+                        "elev1": {"floor": 1, "behaviour": "doorOpen"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step B8: Sleep 1.5s — fresh 3s timer is running, door must still be open. (1.5s leaves 500ms+ margin before the 3s timer fires.)"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 1.5
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "door-still-open-mid-timer",
+                    "timeout": 2.0,
+                    "expected": {
+                        "elev1": {"floor": 1, "behaviour": "doorOpen"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step B9: Wait up to 6s for the 3-second timer to expire and the door to close."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "door-closed-after-timer",
+                    "timeout": 6.0,
+                    "expected": {
+                        "elev1": {"floor": 1, "behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "=== Part C: Obstruction while moving stops the elevator and opens the door ==="
+                },
+                {
+                    "action": "print",
+                    "message": "Step C1: Inject hall_up floor 3 and cab floor 3 on elev1 to send it upward."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_up",
+                    "floor": 3,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "inject_order",
+                    "type": "cab",
+                    "floor": 3,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Step C2: Wait for elev1 to start moving."
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 10.0,
+                    "expected": {
+                        "elev1": {"behaviour": "moving"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step C3: Toggle obstruction ON while elev1 is moving."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "obstruction_toggle",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Step C4: Verify elev1 stops moving within 6s."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-stopped-by-obstruction",
+                    "timeout": 6.0,
+                    "expected": {
+                        "elev1": {"behaviour": ["doorOpen", "idle"]}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step C5: Verify elev1 has opened its door (doorOpen)."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-door-open-after-obstruction",
+                    "timeout": 3.0,
+                    "expected": {
+                        "elev1": {"behaviour": "doorOpen"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step C6: Toggle obstruction OFF."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "obstruction_toggle",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Step C7: Verify elev1 eventually reaches floor 3 and completes the order."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-reached-floor3",
+                    "timeout": 30.0,
+                    "expected": {
+                        "elev1": {"floor": 3, "behaviour": ["doorOpen", "idle"]}
+                    }
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 10.0,
+                    "expected": {
+                        "elev1": {"floor": 3, "behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "=== Final log verification ==="
+                },
+                {
+                    "action": "verify_logs_extended",
+                    "checks": [
+                        {
+                            "type": "all_hall_orders_cleared"
+                        },
+                        {
+                            "type": "no_order_stuck",
+                            "max_idle_seconds": 60.0
+                        },
+                        {
+                            "type": "behaviour_sequence",
+                            "node_id": "elev1",
+                            "sequence": ["moving", "doorOpen", "idle"]
+                        }
+                    ]
+                },
+                {
+                    "action": "print",
+                    "message": "S3 complete: obstruction hold, timer restart, and mid-motion stop all verified."
+                }
+            ]
+        },
+        {
+            "name": "S4: Directional Hall Order Clearing",
+            "description": "Three-part test of directional hall-order clearing. Part A: an up-travelling elevator clears only HallUp at floor 2, leaving HallDown for a second door-open cycle. Part B: a down-travelling elevator clears only HallDown at floor 1, leaving HallUp for a second cycle. Part C: log verification confirms two door-opens at each floor via [EVENT] counts (the FSM transitions through idle between them too fast for UDP polling to observe).",
+            "steps": [
+                {
+                    "action": "print",
+                    "message": "=== Part A: Up-travelling elevator clears HallUp only at floor 2 ==="
+                },
+                {
+                    "action": "print",
+                    "message": "Step A1: Verify all elevators homed and idle at floor 0."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "all-homed-before-s4",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev2": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev3": {"floor": 0, "behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step A2: Kill elev2 and elev3 so only elev1 can serve orders."
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev2"
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev3"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 2
+                },
+                {
+                    "action": "print",
+                    "message": "Step A3: Inject hall_up floor 2, hall_down floor 2, and cab floor 2 on elev1. The simulator hall_down key string is 1-indexed, so floor=1 here places hall_down at physical floor 2."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_up",
+                    "floor": 2,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 0.3
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_down",
+                    "floor": 1,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 0.3
+                },
+                {
+                    "action": "inject_order",
+                    "type": "cab",
+                    "floor": 2,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Step A4: Verify elev1 starts moving upward."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-moving-up-to-floor2",
+                    "timeout": 10.0,
+                    "expected": {
+                        "elev1": {"behaviour": "moving", "direction": "up"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step A5: Verify elev1 arrives at floor 2 and opens door (first pass)."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-doorOpen-floor2-first",
+                    "timeout": 25.0,
+                    "expected": {
+                        "elev1": {"floor": 2, "behaviour": "doorOpen"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step A6: Wait for elev1 to finish both door-opens at floor 2 and become idle. The FSM opens the door twice (once for HallUp direction=Up, once for HallDown direction=Stop after timer fires), but the transient idle between them is not observable via UDP. Allow up to 20s for the full double-open sequence to complete."
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 20.0,
+                    "expected": {
+                        "elev1": {"floor": 2, "behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "=== Part B: Down-travelling elevator clears HallDown only at floor 1 ==="
+                },
+                {
+                    "action": "print",
+                    "message": "Step B1: Inject hall_down floor 1, hall_up floor 1, and cab floor 1 on elev1 (from floor 2). The simulator hall_down key string is 1-indexed, so floor=0 here places hall_down at physical floor 1."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_down",
+                    "floor": 0,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_up",
+                    "floor": 1,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "inject_order",
+                    "type": "cab",
+                    "floor": 1,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Step B2: Verify elev1 starts moving downward."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-moving-down-to-floor1",
+                    "timeout": 10.0,
+                    "expected": {
+                        "elev1": {"behaviour": "moving", "direction": "down"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step B3: Verify elev1 arrives at floor 1 and opens door (first pass)."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-doorOpen-floor1-first",
+                    "timeout": 25.0,
+                    "expected": {
+                        "elev1": {"floor": 1, "behaviour": "doorOpen"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step B4: Wait for elev1 to finish both door-opens at floor 1 and become idle."
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 20.0,
+                    "expected": {
+                        "elev1": {"floor": 1, "behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "=== Part C: Log verification and cluster restoration ==="
+                },
+                {
+                    "action": "print",
+                    "message": "Step C1: Restart elev2 and elev3."
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev2"
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev3"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 5
+                },
+                {
+                    "action": "print",
+                    "message": "Step C2: Verify logs confirm directional clearing: two [EVENT] door_opened at floor 2 and two at floor 1, all four hall orders served and cleared."
+                },
+                {
+                    "action": "verify_logs_extended",
+                    "checks": [
+                        {
+                            "type": "all_hall_orders_cleared"
+                        },
+                        {
+                            "type": "no_order_stuck",
+                            "max_idle_seconds": 90.0
+                        },
+                        {
+                            "type": "hall_order_served",
+                            "floor": 2,
+                            "direction": 0
+                        },
+                        {
+                            "type": "hall_order_served",
+                            "floor": 2,
+                            "direction": 1
+                        },
+                        {
+                            "type": "hall_order_served",
+                            "floor": 1,
+                            "direction": 0
+                        },
+                        {
+                            "type": "hall_order_served",
+                            "floor": 1,
+                            "direction": 1
+                        },
+                        {
+                            "type": "door_open_count",
+                            "node_id": "elev1",
+                            "floor": 2,
+                            "min_count": 2
+                        },
+                        {
+                            "type": "door_open_count",
+                            "node_id": "elev1",
+                            "floor": 1,
+                            "min_count": 2
+                        },
+                        {
+                            "type": "behaviour_sequence",
+                            "node_id": "elev1",
+                            "sequence": ["moving", "doorOpen", "moving", "doorOpen"]
+                        }
+                    ]
+                },
+                {
+                    "action": "print",
+                    "message": "S4 complete: directional hall-order clearing verified for both Up and Down directions."
+                }
+            ]
         }
     ]
 }

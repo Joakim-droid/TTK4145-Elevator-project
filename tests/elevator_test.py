@@ -28,12 +28,13 @@ NOISE_RULE_PATH = "/tmp/elevator_noise.rule"
 NOISE_CONF_PATH = "/tmp/pf.elevator.conf"
 NOISE_ENABLED = False
 _NOISE_PROCESS = None
-TEST_OPTIONS = {"noise": 0, "keep_running": False, "manual": False}
+TEST_OPTIONS = {"noise": 0, "keep_running": False, "manual": False, "scenario": None}
 
 # Simulator keyboard mappings (from SimElevatorServer docs)
 _HALL_UP_KEYS = "qwertyui"
 _HALL_DOWN_KEYS = "sdfghjkl"
 _CAB_KEYS = "zxcvbnm,."
+_OBSTRUCTION_KEY = "-"
 
 # Each simulator lives in its own pane inside window 0 of this session.
 TMUX_SESSION = "elevator_chaos"
@@ -65,6 +66,15 @@ def parse_args():
         help=(
             "Start simulators and nodes without running any automated scenarios. "
             "Press Ctrl+C to stop."
+        ),
+    )
+    parser.add_argument(
+        "--scenario",
+        type=str,
+        default=None,
+        help=(
+            "Run only the specified scenario. "
+            "Accepts a 1-based index (e.g. 4) or a substring of the scenario name (e.g. S4)."
         ),
     )
     return parser.parse_args()
@@ -475,12 +485,17 @@ def get_current_network_state():
     return merged
 
 
-def inject_order(order_type, floor, node_id=None):
+def inject_order(order_type, floor=None, node_id=None):
     """Inject a button press via tmux send-keys into the target simulator window.
     This is identical to a human pressing a key inside the simulator terminal."""
     target = node_id or next(iter(NODES))
 
-    if order_type == "hall_up":
+    if order_type == "obstruction_toggle":
+        key = _OBSTRUCTION_KEY
+    elif floor is None:
+        print(f"  [!] inject_order: 'floor' is required for order type '{order_type}'")
+        return
+    elif order_type == "hall_up":
         key = _HALL_UP_KEYS[floor]
     elif order_type == "hall_down":
         key = _HALL_DOWN_KEYS[floor]
@@ -490,7 +505,8 @@ def inject_order(order_type, floor, node_id=None):
         print(f"  [!] Unknown order type: {order_type}")
         return
 
-    print(f"  [kbd] '{key}' -> {target} simulator (floor {floor} {order_type})")
+    label = f"floor {floor} " if floor is not None else ""
+    print(f"  [kbd] '{key}' -> {target} simulator ({label}{order_type})")
     # No Enter/C-m: the simulator reads raw keypresses, not newline-terminated commands.
     subprocess.run(["tmux", "send-keys", "-t", _tmux_target(target), key])
 
@@ -695,6 +711,32 @@ def run_scenarios_from_config():
         config = json.load(f)
 
     scenarios = config.get("scenarios", [])
+
+    # Filter by --scenario if specified
+    scenario_filter = TEST_OPTIONS.get("scenario")
+    if scenario_filter is not None:
+        try:
+            idx = int(scenario_filter) - 1
+            if 0 <= idx < len(scenarios):
+                scenarios = [scenarios[idx]]
+            else:
+                print(
+                    f"[!] --scenario index {idx + 1} is out of range (1–{len(scenarios)})"
+                )
+                return False, []
+        except ValueError:
+            # Treat as a name substring match
+            matched = [
+                s
+                for s in scenarios
+                if scenario_filter.lower() in s.get("name", "").lower()
+            ]
+            if not matched:
+                print(
+                    f"[!] --scenario '{scenario_filter}' did not match any scenario name"
+                )
+                return False, []
+            scenarios = matched
     logs_dir = os.path.join(TESTS_DIR, "logs")
     passed_all = True
     scenario_results: list[dict] = []
@@ -864,6 +906,7 @@ if __name__ == "__main__":
     TEST_OPTIONS["noise"] = max(0, min(100, args.noise))
     TEST_OPTIONS["keep_running"] = args.keep_running
     TEST_OPTIONS["manual"] = args.manual
+    TEST_OPTIONS["scenario"] = args.scenario
 
     os.system("pkill -f SimElevatorServer || true")
     os.system("pkill -f TTK4145-Elevator-project || true")

@@ -771,6 +771,32 @@ def check_behaviour_sequence(
     return r
 
 
+def check_door_open_count(
+    events: list[dict],
+    node_id: str,
+    floor: int,
+    min_count: int,
+) -> VerifyResult:
+    """Verify that [EVENT] door_opened floor=N appears at least *min_count* times
+    in *node_id*'s log.  This is used to prove that an elevator opened its door
+    more than once at a given floor (directional clearing leaves one hall order
+    for a second door-open cycle)."""
+    r = VerifyResult("door_open_count")
+    label = f"{node_id} door_opened floor={floor} >= {min_count}x"
+    count = sum(
+        1
+        for ev in (events or [])
+        if ev.get("name") == "door_opened" and ev.get("floor") == floor
+    )
+    if count >= min_count:
+        r.ok(f"{label}: observed {count} door_opened events at floor {floor} ✓")
+    else:
+        r.fail(
+            f"{label}: only {count} door_opened event(s) at floor {floor}, expected >= {min_count}"
+        )
+    return r
+
+
 # ---------------------------------------------------------------------------
 # Timeline dump (verbose diagnostics)
 # ---------------------------------------------------------------------------
@@ -893,6 +919,16 @@ def run_verification(
             )
         elif vtype == "behaviour_sequence":
             results.append(check_behaviour_sequence(logs, v["node_id"], v["sequence"]))
+        elif vtype == "door_open_count":
+            nid = v["node_id"]
+            results.append(
+                check_door_open_count(
+                    all_events.get(nid, []),
+                    nid,
+                    v["floor"],
+                    v.get("min_count", 2),
+                )
+            )
         else:
             print(f"  [!] Unknown verification type: {vtype}")
 

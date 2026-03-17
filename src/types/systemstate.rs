@@ -162,24 +162,23 @@ impl SystemState {
 
         match direction {
             Direction::Up => {
+                // Travelling up: only board passengers going up
                 if self.hall_requests[floor as usize][0] {
-                    clear_up = true; // Clear UP if it exists
-                } else if self.hall_requests[floor as usize][1] {
-                    clear_down = true; // Fallback: clear DOWN if no UP exists
+                    clear_up = true;
                 }
             }
             Direction::Down => {
+                // Travelling down: only board passengers going down
                 if self.hall_requests[floor as usize][1] {
-                    clear_down = true; // Clear DOWN if it exists
-                } else if self.hall_requests[floor as usize][0] {
-                    clear_up = true; // Fallback: clear UP if no DOWN exists
+                    clear_down = true;
                 }
             }
             Direction::Stop => {
-                // If stopped at a floor, we can clear both directions, but prioritize the one that is actually ordered
+                // Idle at floor: serve everyone waiting here
                 if self.hall_requests[floor as usize][0] {
                     clear_up = true;
-                } else if self.hall_requests[floor as usize][1] {
+                }
+                if self.hall_requests[floor as usize][1] {
                     clear_down = true;
                 }
             }
