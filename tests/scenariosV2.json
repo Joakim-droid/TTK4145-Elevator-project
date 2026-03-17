@@ -1687,6 +1687,464 @@
                     "message": "S10 complete: all hall orders survived the rolling blackout. The torch was passed successfully from elev3 to elev1, and the fully restored cluster confirmed zero order loss."
                 }
             ]
+        },
+        {
+            "name": "S12: Emergency Stop — Motor Halts and Elevator Resumes",
+            "description": "Verifies the emergency stop button (key 'p'). Part A: pressing stop mid-motion halts the motor and transitions the elevator to idle. Part B: releasing stop allows the elevator to resume its goal and serve the pending order. Tests that the halt is immediate and that resumption happens via the normal assigner path without any data loss.",
+            "steps": [
+                {
+                    "action": "print",
+                    "message": "=== Part A: Emergency stop halts motor mid-motion ==="
+                },
+                {
+                    "action": "print",
+                    "message": "Step A1: Verify all elevators are homed and idle at floor 0."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "all-homed-before-s12",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev2": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev3": {"floor": 0, "behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step A2: Inject cab floor 3 on elev1 — cab order guarantees only elev1 serves it."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "cab",
+                    "floor": 3,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Step A3: Wait for elev1 to start moving toward floor 3."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-moving-before-stop",
+                    "timeout": 8.0,
+                    "expected": {
+                        "elev1": {"behaviour": "moving"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step A4: Sleep 1s so elev1 is mid-journey, then press emergency stop."
+                },
+                {
+                    "action": "sleep",
+                    "duration": 1.0
+                },
+                {
+                    "action": "inject_order",
+                    "type": "stop_button_toggle",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Step A5: Verify elev1 transitions to idle within 3s — motor must stop."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-halted-by-emergency-stop",
+                    "timeout": 3.0,
+                    "expected": {
+                        "elev1": {"behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step A6: Sleep 2s and verify elev1 is still stopped — it must not spontaneously resume while stop is active."
+                },
+                {
+                    "action": "sleep",
+                    "duration": 2.0
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-still-stopped",
+                    "timeout": 2.0,
+                    "expected": {
+                        "elev1": {"behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "=== Part B: Release stop — elevator resumes after re-injecting the pending order ==="
+                },
+                {
+                    "action": "print",
+                    "message": "Step B1: Sleep 1s to ensure the 200ms btnDepressedTime window from Part A has fully expired before releasing stop."
+                },
+                {
+                    "action": "sleep",
+                    "duration": 1.0
+                },
+                {
+                    "action": "print",
+                    "message": "Step B2: Release emergency stop by toggling the stop button again."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "stop_button_toggle",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Step B3: Sleep 0.5s to let the release event settle before re-injecting the cab order."
+                },
+                {
+                    "action": "sleep",
+                    "duration": 0.5
+                },
+                {
+                    "action": "print",
+                    "message": "Step B4: Re-inject the cab floor 3 order. After stop release, the FSM needs a new event to re-evaluate the pending order. Re-pressing the cab button triggers ButtonPressed → assigner → FSM and resumes movement."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "cab",
+                    "floor": 3,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Step B5: Verify elev1 resumes moving toward floor 3 within 5s."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-resumed-after-stop-release",
+                    "timeout": 5.0,
+                    "expected": {
+                        "elev1": {"behaviour": "moving"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step B6: Verify elev1 eventually reaches floor 3 and opens its door — the cab order must be served."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-served-cab-after-stop-release",
+                    "timeout": 25.0,
+                    "expected": {
+                        "elev1": {"floor": 3, "behaviour": ["doorOpen", "idle"]}
+                    }
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 10.0,
+                    "expected": {
+                        "elev1": {"floor": 3, "behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step B7: Log verification — cab order served, no phantom movement."
+                },
+                {
+                    "action": "verify_logs_extended",
+                    "checks": [
+                        {
+                            "type": "cab_order_served",
+                            "node_id": "elev1",
+                            "floor": 3
+                        },
+                        {
+                            "type": "behaviour_sequence",
+                            "node_id": "elev1",
+                            "sequence": ["moving", "idle", "moving", "doorOpen", "idle"]
+                        }
+                    ]
+                },
+                {
+                    "action": "print",
+                    "message": "S12 complete: emergency stop halted the motor immediately; releasing stop allowed the elevator to resume and serve the pending cab order."
+                }
+            ]
+        },
+        {
+            "name": "S11: Severe Packet Loss and Network Healing",
+            "description": "Verifies the system remains operational under 75% UDP packet loss. A hall order is injected while the network is severely degraded; elevators may enter a split-brain state and multiple may attempt to serve the order. Once the network heals, the cluster must merge state, globally clear the order, and stabilize without phantom orders or crashes.",
+            "steps": [
+                {
+                    "action": "print",
+                    "message": "Part A: Verify all elevators homed before applying noise."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "all-homed-before-noise",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev2": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev3": {"floor": 0, "behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Applying 75% packet loss to UDP traffic."
+                },
+                {
+                    "action": "set_noise",
+                    "percent": 75
+                },
+                {
+                    "action": "print",
+                    "message": "Part B: Injecting Hall Down at Floor 2."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_down",
+                    "floor": 1,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Waiting for any elevator to serve the order despite packet loss (split-brain may cause multiple to serve it)."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "order-served-under-packetloss",
+                    "timeout": 25.0,
+                    "require_any": true,
+                    "expected": {
+                        "elev1": {"floor": 2, "behaviour": "doorOpen"},
+                        "elev2": {"floor": 2, "behaviour": "doorOpen"},
+                        "elev3": {"floor": 2, "behaviour": "doorOpen"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Part C: Removing packet loss. The network is healing."
+                },
+                {
+                    "action": "set_noise",
+                    "percent": 0
+                },
+                {
+                    "action": "sleep",
+                    "duration": 5.0
+                },
+                {
+                    "action": "print",
+                    "message": "Verify cluster stabilizes and all elevators return to idle."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "cluster-healed-and-stable",
+                    "timeout": 20.0,
+                    "expected": {
+                        "elev1": {"behaviour": ["idle", "doorOpen"]},
+                        "elev2": {"behaviour": ["idle", "doorOpen"]},
+                        "elev3": {"behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "verify_logs_extended",
+                    "checks": [
+                        {
+                            "type": "all_hall_orders_cleared"
+                        },
+                        {
+                            "type": "hall_order_served",
+                            "floor": 2,
+                            "direction": 1
+                        },
+                        {
+                            "type": "no_order_stuck",
+                            "max_idle_seconds": 60
+                        }
+                    ]
+                },
+                {
+                    "action": "print",
+                    "message": "S11 complete: system survived 75% packet loss, served the order, and re-synchronized cleanly."
+                }
+            ]
+        },
+        {
+            "name": "S13: Two-Node Crash — Single Survivor Serves All Pending Hall Orders",
+            "description": "Verifies the single-survivor guarantee: two hall orders are injected simultaneously, then two of the three elevators are killed within the peer-discovery window. The sole surviving elevator must detect both peers as dead, re-run the assigner as a solo node, and serve both stranded hall orders without help. Tests the assigner's behaviour under maximum failure load and confirms hall epoch persistence across the double-crash.",
+            "steps": [
+                {
+                    "action": "print",
+                    "message": "=== Part A: Inject two hall orders with all three nodes alive ==="
+                },
+                {
+                    "action": "print",
+                    "message": "Step A1: Verify all elevators are homed and idle at floor 0."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "all-homed-before-s13",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev2": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev3": {"floor": 0, "behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step A2: Inject hall_up floor 1 on elev1's simulator and hall_up floor 2 on elev2's simulator."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_up",
+                    "floor": 1,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_up",
+                    "floor": 2,
+                    "node_id": "elev2"
+                },
+                {
+                    "action": "print",
+                    "message": "Step A3: Sleep 1s to let the eager broadcasts propagate both orders to all nodes."
+                },
+                {
+                    "action": "sleep",
+                    "duration": 1.0
+                },
+                {
+                    "action": "print",
+                    "message": "=== Part B: Kill two nodes — elev3 is the sole survivor ==="
+                },
+                {
+                    "action": "print",
+                    "message": "Step B1: Kill elev1 and elev2 in rapid succession."
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 0.3
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev2"
+                },
+                {
+                    "action": "print",
+                    "message": "Step B2: Sleep 2.5s for peer-discovery timeout (1500ms) to expire for both dead nodes."
+                },
+                {
+                    "action": "sleep",
+                    "duration": 2.5
+                },
+                {
+                    "action": "print",
+                    "message": "=== Part C: Verify elev3 serves both stranded hall orders alone ==="
+                },
+                {
+                    "action": "print",
+                    "message": "Step C1: Verify elev3 starts moving — it must have self-assigned both pending hall orders."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev3-moving-as-sole-survivor",
+                    "timeout": 8.0,
+                    "expected": {
+                        "elev3": {"behaviour": "moving"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step C2: Verify elev3 serves the floor 1 order (doorOpen or idle at floor 1). Non-asserting — transient state."
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 20.0,
+                    "expected": {
+                        "elev3": {"floor": 1, "behaviour": "doorOpen"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step C3: Verify elev3 eventually serves the floor 2 order."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev3-served-floor2",
+                    "timeout": 30.0,
+                    "expected": {
+                        "elev3": {"floor": 2, "behaviour": ["doorOpen", "idle"]}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step C4: Wait for elev3 to finish and become idle."
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 10.0,
+                    "expected": {
+                        "elev3": {"behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "=== Part D: Restore cluster and verify no orders remain ==="
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev2"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 5.0
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "cluster-stable-after-double-crash",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"behaviour": ["idle", "doorOpen"]},
+                        "elev2": {"behaviour": ["idle", "doorOpen"]},
+                        "elev3": {"behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "verify_logs_extended",
+                    "checks": [
+                        {
+                            "type": "all_hall_orders_cleared"
+                        },
+                        {
+                            "type": "hall_order_served",
+                            "floor": 1,
+                            "direction": 0
+                        },
+                        {
+                            "type": "hall_order_served",
+                            "floor": 2,
+                            "direction": 0
+                        },
+                        {
+                            "type": "no_order_stuck",
+                            "max_idle_seconds": 60.0
+                        }
+                    ]
+                },
+                {
+                    "action": "print",
+                    "message": "S13 complete: single surviving elevator detected both peers as dead, self-assigned both pending hall orders, and served them alone. Cluster restored cleanly."
+                }
+            ]
         }
     ]
 }

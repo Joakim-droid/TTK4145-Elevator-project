@@ -35,6 +35,7 @@ _HALL_UP_KEYS = "qwertyui"
 _HALL_DOWN_KEYS = "sdfghjkl"
 _CAB_KEYS = "zxcvbnm,."
 _OBSTRUCTION_KEY = "-"
+_STOP_BUTTON_KEY = "p"
 
 # Each simulator lives in its own pane inside window 0 of this session.
 TMUX_SESSION = "elevator_chaos"
@@ -492,6 +493,8 @@ def inject_order(order_type, floor=None, node_id=None):
 
     if order_type == "obstruction_toggle":
         key = _OBSTRUCTION_KEY
+    elif order_type == "stop_button_toggle":
+        key = _STOP_BUTTON_KEY
     elif floor is None:
         print(f"  [!] inject_order: 'floor' is required for order type '{order_type}'")
         return
@@ -862,6 +865,14 @@ def run_scenarios_from_config():
                     scenario_passed = False
                     _record_issue(scenario_issues, "log verification failed")
 
+            elif action == "set_noise":
+                percent = step.get("percent", 0)
+                print(f"  [~] Adjusting network noise to {percent}%...")
+                if percent > 0:
+                    apply_noise(percent)
+                else:
+                    cleanup_noise()
+
             elif action == "verify_logs_extended":
                 # Extended log verification that includes per-node timeline dumps.
                 time.sleep(0.5)
@@ -890,6 +901,8 @@ def run_scenarios_from_config():
 
         status = "PASS" if scenario_passed else "FAIL"
         print(f"\n  Scenario result: {status}")
+        # Always clean up noise at the end of a scenario to prevent leaking into the next
+        cleanup_noise()
         scenario_results.append(
             {
                 "name": scenario.get("name", "Unnamed"),
