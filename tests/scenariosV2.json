@@ -1132,6 +1132,109 @@
                     "message": "S5 complete: isolated elevator served pre-loaded hall and cab orders, accepted a new cab call while disconnected, and rejoined the cluster cleanly without restart."
                 }
             ]
+        },
+        {
+            "name": "S6: Dead Elevator Takeover Mid-Journey",
+            "description": "Verifies that when an elevator is killed while traveling to serve a hall order, the surviving peers detect the failure via peer-discovery timeout, re-assign the abandoned call via the hall-request assigner, and successfully serve the stranded order.",
+            "steps": [
+                {
+                    "action": "print",
+                    "message": "S6 Part A: Home all elevators and inject a hall order to trigger movement."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "all-homed-idle",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 0, "behaviour": "idle"},
+                        "elev2": {"floor": 0, "behaviour": "idle"},
+                        "elev3": {"floor": 0, "behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_up",
+                    "floor": 2,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "label": "elev1-moving-to-hall-order",
+                    "timeout": 8.0,
+                    "expected": {
+                        "elev1": {"behaviour": "moving"}
+                    }
+                },
+                {
+                    "action": "sleep",
+                    "duration": 1.5
+                },
+                {
+                    "action": "print",
+                    "message": "S6 Part B: Kill elev1 mid-journey and wait for peer-discovery timeout."
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 2.5
+                },
+                {
+                    "action": "print",
+                    "message": "S6 Part C: Verify a surviving elevator takes over and serves the stranded hall order."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "survivor-takes-over-order",
+                    "timeout": 10.0,
+                    "require_any": true,
+                    "expected": {
+                        "elev2": {"behaviour": "moving"},
+                        "elev3": {"behaviour": "moving"}
+                    }
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "survivor-serves-stranded-order",
+                    "timeout": 25.0,
+                    "require_any": true,
+                    "expected": {
+                        "elev2": {"floor": 2, "behaviour": "doorOpen"},
+                        "elev3": {"floor": 2, "behaviour": "doorOpen"}
+                    }
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 5.0
+                },
+                {
+                    "action": "verify_logs_extended",
+                    "checks": [
+                        {
+                            "type": "all_hall_orders_cleared"
+                        },
+                        {
+                            "type": "no_order_stuck",
+                            "max_idle_seconds": 45.0
+                        },
+                        {
+                            "type": "hall_order_served",
+                            "floor": 2,
+                            "direction": 0
+                        }
+                    ]
+                },
+                {
+                    "action": "print",
+                    "message": "S6 complete: surviving peer detected dead elevator, took over stranded hall order, and served it successfully."
+                }
+            ]
         }
     ]
 }
