@@ -1522,6 +1522,171 @@
                     "message": "S9 complete: three rapid restart cycles did not produce phantom orders; all nodes settled idle at floor 0, confirming boot_id epoch synchronization is correct."
                 }
             ]
+        },
+        {
+            "name": "S10: The Rolling Blackout — Maximum Chaos Failover",
+            "description": "Tests the passing of cluster state memory across rolling failures. Multiple hall orders are injected into a healthy cluster, then nodes are killed one by one until only a single survivor remains holding the full world-view. A new node boots and syncs the pending orders from the survivor before the survivor is killed — the torch is passed. The cluster is then fully restored and we verify that no hall order was lost during the entire rolling blackout, as long as at least one node remained alive at all times.",
+            "steps": [
+                {
+                    "action": "print",
+                    "message": "Part A — Setup: Verify all elevators are homed and idle at floor 0."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "all-homed-before-blackout",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev2": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev3": {"floor": 0, "behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Injecting multiple orders: Hall Up Floor 2 (elev1), Hall Down Floor 3 (elev2), and Cab Floor 3 for elev1 (so elev1 must serve it after syncing)."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_up",
+                    "floor": 2,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_down",
+                    "floor": 2,
+                    "node_id": "elev2"
+                },
+                {
+                    "action": "inject_order",
+                    "type": "cab",
+                    "floor": 3,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 1.5
+                },
+                {
+                    "action": "print",
+                    "message": "Part B — First Wave of Failures: Killing elev1 and elev2. elev3 is the sole survivor."
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 1.0
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev2"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 2.5
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev3-holds-the-torch",
+                    "timeout": 8.0,
+                    "require_any": true,
+                    "expected": {
+                        "elev3": {"behaviour": ["moving", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Part C — The Torch Pass: Restarting elev1. It must sync the pending orders from elev3."
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 4.0
+                },
+                {
+                    "action": "print",
+                    "message": "Killing elev3. elev1 is now the sole survivor."
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev3"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 2.0
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-received-the-torch",
+                    "timeout": 12.0,
+                    "require_any": true,
+                    "expected": {
+                        "elev1": {"behaviour": ["moving", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Part D — Cluster Restoration: Restarting elev2 and elev3 to restore the cluster."
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev2"
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev3"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 25.0
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "cluster-stabilized-after-blackout",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"behaviour": ["idle", "doorOpen"]},
+                        "elev2": {"behaviour": ["idle", "doorOpen"]},
+                        "elev3": {"behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "verify_logs_extended",
+                    "checks": [
+                        {
+                            "type": "all_hall_orders_cleared"
+                        },
+                        {
+                            "type": "hall_order_served",
+                            "floor": 2,
+                            "direction": 0
+                        },
+                        {
+                            "type": "hall_order_served",
+                            "floor": 3,
+                            "direction": 1
+                        },
+                        {
+                            "type": "cab_order_served",
+                            "node_id": "elev1",
+                            "floor": 3
+                        },
+                        {
+                            "type": "no_order_stuck",
+                            "max_idle_seconds": 60
+                        }
+                    ]
+                },
+                {
+                    "action": "print",
+                    "message": "S10 complete: all hall orders survived the rolling blackout. The torch was passed successfully from elev3 to elev1, and the fully restored cluster confirmed zero order loss."
+                }
+            ]
         }
     ]
 }
