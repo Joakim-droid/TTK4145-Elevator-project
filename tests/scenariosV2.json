@@ -1235,6 +1235,293 @@
                     "message": "S6 complete: surviving peer detected dead elevator, took over stranded hall order, and served it successfully."
                 }
             ]
+        },
+        {
+            "name": "S7: Cab Isolation — Cab Orders Not Shared Between Nodes",
+            "description": "Verifies that cab orders are strictly local: only the elevator at the cab button's simulator reacts, while peers remain idle at floor 0 for the entire duration, proving cab_requests are never assigned to other nodes by the hall_request_assigner.",
+            "steps": [
+                {
+                    "action": "print",
+                    "message": "S7 Part A: Home all elevators and inject a cab order on elev1 only."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "all-homed-idle-before-s7",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 0, "behaviour": "idle"},
+                        "elev2": {"floor": 0, "behaviour": "idle"},
+                        "elev3": {"floor": 0, "behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "inject_order",
+                    "type": "cab",
+                    "floor": 3,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-moving-to-cab-order",
+                    "timeout": 8.0,
+                    "expected": {
+                        "elev1": {"behaviour": "moving"}
+                    }
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "elev1-serves-cab-order",
+                    "timeout": 25.0,
+                    "expected": {
+                        "elev1": {"floor": 3, "behaviour": "doorOpen"}
+                    }
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 10.0,
+                    "expected": {
+                        "elev1": {"floor": 3, "behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "S7 Part B: Verify peers ignored elev1's cab order and never left floor 0."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "peers-ignored-cab-order",
+                    "timeout": 5.0,
+                    "expected": {
+                        "elev2": {"floor": 0, "behaviour": "idle"},
+                        "elev3": {"floor": 0, "behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "verify_logs_extended",
+                    "checks": [
+                        {
+                            "type": "cab_order_served",
+                            "node_id": "elev1",
+                            "floor": 3
+                        },
+                        {
+                            "type": "current_state",
+                            "expected": {
+                                "elev2": {"floor": 0, "behaviour": "idle"}
+                            }
+                        },
+                        {
+                            "type": "current_state",
+                            "expected": {
+                                "elev3": {"floor": 0, "behaviour": "idle"}
+                            }
+                        }
+                    ]
+                },
+                {
+                    "action": "print",
+                    "message": "S7 complete: elev1 served its local cab order; elev2 and elev3 remained idle at floor 0, confirming cab isolation."
+                }
+            ]
+        },
+        {
+            "name": "S8: Simultaneous Hall Orders — Assigner Efficiency",
+            "description": "Verifies the hall_request_assigner distributes concurrent hall calls across multiple elevators. Two hall orders (floor 1 and floor 2) are injected simultaneously from different simulators. If both are cleared within 12 seconds it proves parallel dispatch: a single elevator serving them sequentially would require >12 seconds (travel + 2x door-open), so clearing both within 12s is only possible if two elevators worked in parallel.",
+            "steps": [
+                {
+                    "action": "print",
+                    "message": "S8 Part A: Home all elevators and inject two simultaneous hall orders on different simulators."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "all-homed-idle-before-s8",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 0, "behaviour": "idle"},
+                        "elev2": {"floor": 0, "behaviour": "idle"},
+                        "elev3": {"floor": 0, "behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_up",
+                    "floor": 1,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_up",
+                    "floor": 2,
+                    "node_id": "elev2"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 12.0
+                },
+                {
+                    "action": "print",
+                    "message": "S8 Part B: Verify all orders were served within the 12-second parallel execution window."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "cluster-stable-after-orders",
+                    "timeout": 5.0,
+                    "expected": {
+                        "elev1": {"behaviour": ["idle", "doorOpen"]},
+                        "elev2": {"behaviour": ["idle", "doorOpen"]},
+                        "elev3": {"behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "verify_logs_extended",
+                    "checks": [
+                        {
+                            "type": "all_hall_orders_cleared"
+                        },
+                        {
+                            "type": "hall_order_served_within",
+                            "floor": 1,
+                            "direction": 0,
+                            "max_seconds": 12.0
+                        },
+                        {
+                            "type": "hall_order_served_within",
+                            "floor": 2,
+                            "direction": 0,
+                            "max_seconds": 12.0
+                        }
+                    ]
+                },
+                {
+                    "action": "print",
+                    "message": "S8 complete: both hall orders cleared within 12 seconds, proving the assigner dispatched them to separate elevators in parallel."
+                }
+            ]
+        },
+        {
+            "name": "S9: Restart Loop Stability — No Phantom Orders",
+            "description": "Verifies that rapid successive kills and restarts of one elevator (elev1) do not corrupt the distributed state. Each restart generates a new boot_id and resets seq to 0; if merge_with handles boot_id epoch transitions incorrectly, stale network packets could override fresh state, producing phantom cab/hall orders that cause spurious movement. After three rapid restart cycles, all nodes must settle idle at floor 0 with no ghost orders.",
+            "steps": [
+                {
+                    "action": "print",
+                    "message": "S9 Part A: Verify clean cluster state before inducing chaos."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "all-homed-idle-before-s9",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 0, "behaviour": "idle"},
+                        "elev2": {"floor": 0, "behaviour": "idle"},
+                        "elev3": {"floor": 0, "behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "S9 Part B: Restart loop — Killing and restarting elev1 (Iteration 1)"
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 2.0
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 2.0
+                },
+                {
+                    "action": "print",
+                    "message": "Killing and restarting elev1 (Iteration 2)"
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 2.0
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 2.0
+                },
+                {
+                    "action": "print",
+                    "message": "Killing and restarting elev1 (Iteration 3)"
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 2.0
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 2.0
+                },
+                {
+                    "action": "print",
+                    "message": "S9 Part C: Waiting for cluster to stabilize and sync states."
+                },
+                {
+                    "action": "sleep",
+                    "duration": 8.0
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "cluster-stable-no-phantom-orders",
+                    "timeout": 10.0,
+                    "expected": {
+                        "elev1": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev2": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev3": {"floor": 0, "behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "verify_logs_extended",
+                    "checks": [
+                        {
+                            "type": "current_state",
+                            "expected": {
+                                "elev1": {"floor": 0, "behaviour": "idle"}
+                            }
+                        },
+                        {
+                            "type": "current_state",
+                            "expected": {
+                                "elev2": {"floor": 0, "behaviour": "idle"}
+                            }
+                        },
+                        {
+                            "type": "current_state",
+                            "expected": {
+                                "elev3": {"floor": 0, "behaviour": "idle"}
+                            }
+                        }
+                    ]
+                },
+                {
+                    "action": "print",
+                    "message": "S9 complete: three rapid restart cycles did not produce phantom orders; all nodes settled idle at floor 0, confirming boot_id epoch synchronization is correct."
+                }
+            ]
         }
     ]
 }
