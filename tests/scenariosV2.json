@@ -1466,9 +1466,9 @@
                 },
                 {
                     "action": "inject_order",
-                    "type": "hall_down",
-                    "floor": 1,
-                    "node_id": "elev2"
+                    "type": "hall_up",
+                    "floor": 2,
+                    "node_id": "elev1"
                 },
                 {
                     "action": "sleep",
@@ -1575,6 +1575,12 @@
                             "type": "cab_order_served",
                             "node_id": "elev1",
                             "floor": 3
+                        },
+                        {
+                            "type": "door_open_count_max",
+                            "node_id": "elev1",
+                            "floor": 3,
+                            "max_count": 1
                         },
                         {
                             "type": "no_order_stuck",
@@ -2486,6 +2492,436 @@
                 {
                     "action": "print",
                     "message": "SX-A complete: Stop-direction clear-order serves one direction per door-open."
+                }
+            ]
+        },
+        {
+            "name": "BUG1: Obstructed Elevator Not Assigned Orders",
+            "description": "Verifies that the assigner excludes obstructed elevators. elev1 is obstructed before a hall order is injected. elev2 or elev3 must serve the order. Without the fix, the assigner would send the order to elev1 which cannot move, and no one would serve it.",
+            "steps": [
+                {
+                    "action": "print",
+                    "message": "Phase 1: Verify clean baseline."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "bug1-baseline",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev2": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev3": {"floor": 0, "behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 2: Enable obstruction on elev1. It will open its door and stay doorOpen."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "obstruction_toggle",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 1.0
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 3: Inject hall_up floor 2. With the fix, elev2 or elev3 must serve it — NOT elev1."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_up",
+                    "floor": 2,
+                    "node_id": "elev2"
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 4: Verify elev2 or elev3 starts moving (not elev1)."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "bug1-peer-moving-not-obstructed",
+                    "timeout": 10.0,
+                    "require_any": true,
+                    "expected": {
+                        "elev2": {"behaviour": "moving"},
+                        "elev3": {"behaviour": "moving"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 5: Verify elev1 is still doorOpen (obstruction is holding it, it did NOT start moving to serve the order)."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "bug1-elev1-still-obstructed-dooropen",
+                    "timeout": 5.0,
+                    "expected": {
+                        "elev1": {"behaviour": "doorOpen"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 6: Verify a peer serves the hall order at floor 2."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "bug1-peer-served-floor2",
+                    "timeout": 25.0,
+                    "require_any": true,
+                    "expected": {
+                        "elev2": {"floor": 2, "behaviour": ["doorOpen", "idle"]},
+                        "elev3": {"floor": 2, "behaviour": ["doorOpen", "idle"]}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 7: Release obstruction on elev1."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "obstruction_toggle",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 8: Wait for full cluster to become idle."
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"behaviour": ["idle", "doorOpen"]},
+                        "elev2": {"behaviour": ["idle", "doorOpen"]},
+                        "elev3": {"behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 9: Test emergency stop exclusion — press stop on elev1, inject a new hall order, verify peer serves it."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "stop_button_toggle",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 1.0
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "bug1-elev1-emergency-stopped",
+                    "timeout": 5.0,
+                    "expected": {
+                        "elev1": {"behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_up",
+                    "floor": 1,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "bug1-peer-serves-during-estop",
+                    "timeout": 15.0,
+                    "require_any": true,
+                    "expected": {
+                        "elev2": {"floor": 1, "behaviour": ["moving", "doorOpen", "idle"]},
+                        "elev3": {"floor": 1, "behaviour": ["moving", "doorOpen", "idle"]}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 10: Release emergency stop."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "stop_button_toggle",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 10.0,
+                    "expected": {
+                        "elev1": {"behaviour": "idle"},
+                        "elev2": {"behaviour": ["idle", "doorOpen"]},
+                        "elev3": {"behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "verify_logs_extended",
+                    "checks": [
+                        {
+                            "type": "all_hall_orders_cleared"
+                        },
+                        {
+                            "type": "hall_order_served",
+                            "floor": 2,
+                            "direction": 0
+                        },
+                        {
+                            "type": "hall_order_served",
+                            "floor": 1,
+                            "direction": 0
+                        },
+                        {
+                            "type": "no_order_stuck",
+                            "max_idle_seconds": 45.0
+                        }
+                    ]
+                },
+                {
+                    "action": "print",
+                    "message": "BUG1 complete: obstructed elevator was excluded from assignment; peer served the order."
+                }
+            ]
+        },
+        {
+            "name": "BUG2: No Stuck Between Floors on Mid-Flight Order Clear",
+            "description": "Regression test for Bug 2 (peer_state_rx guard when Moving and floor is None). Under 50% packet loss, multiple elevators race toward the same hall order. When one serves it, the others receive the clear mid-flight. Without the fix, the losing elevator stops between floor sensors and never recovers. With the fix it coasts safely to the next sensor and re-evaluates.",
+            "steps": [
+                {
+                    "action": "print",
+                    "message": "Phase 1: Verify clean baseline — all elevators at floor 0."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "bug2-baseline",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 0, "behaviour": "idle"},
+                        "elev2": {"floor": 0, "behaviour": "idle"},
+                        "elev3": {"floor": 0, "behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 2: Apply 50% packet loss. This causes assignment broadcasts to be lost, so multiple elevators start moving toward the same order before any one of them clears it."
+                },
+                {
+                    "action": "set_noise",
+                    "percent": 50
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 3: Inject hall_up floor 3 on all three simulators simultaneously to maximise the chance that all elevators start moving before the first one's clear is received."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_up",
+                    "floor": 3,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_up",
+                    "floor": 3,
+                    "node_id": "elev2"
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_up",
+                    "floor": 3,
+                    "node_id": "elev3"
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 4: Verify at least one elevator starts moving toward floor 3."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "bug2-elevator-moving",
+                    "timeout": 10.0,
+                    "require_any": true,
+                    "expected": {
+                        "elev1": {"behaviour": "moving"},
+                        "elev2": {"behaviour": "moving"},
+                        "elev3": {"behaviour": "moving"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 5: Wait for the order to be served under packet loss — allow generous time."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "bug2-order-served-floor3",
+                    "timeout": 40.0,
+                    "require_any": true,
+                    "expected": {
+                        "elev1": {"floor": 3, "behaviour": ["doorOpen", "idle"]},
+                        "elev2": {"floor": 3, "behaviour": ["doorOpen", "idle"]},
+                        "elev3": {"floor": 3, "behaviour": ["doorOpen", "idle"]}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 6: Remove packet loss and allow cluster to fully stabilise."
+                },
+                {
+                    "action": "set_noise",
+                    "percent": 0
+                },
+                {
+                    "action": "sleep",
+                    "duration": 6.0
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 7: Verify all elevators are at a known floor and idle — none stuck between floors."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "bug2-all-idle-known-floor",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"behaviour": ["idle", "doorOpen"]},
+                        "elev2": {"behaviour": ["idle", "doorOpen"]},
+                        "elev3": {"behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "verify_logs_extended",
+                    "checks": [
+                        {
+                            "type": "all_hall_orders_cleared"
+                        },
+                        {
+                            "type": "no_stuck_between_floors"
+                        },
+                        {
+                            "type": "no_order_stuck",
+                            "max_idle_seconds": 60.0
+                        },
+                        {
+                            "type": "hall_order_served",
+                            "floor": 3,
+                            "direction": 0
+                        }
+                    ]
+                },
+                {
+                    "action": "print",
+                    "message": "BUG2 complete: no elevator was stranded between floors under packet-loss race conditions."
+                }
+            ]
+        },
+        {
+            "name": "BUG3: Door Timer Not Spammed by Peer Broadcasts",
+            "description": "Verifies that peer state broadcasts (every 250ms) do not reset the door open timer while an elevator is in DoorOpen state. Without the fix, each broadcast that triggers merge_with returning true would call open_door() again, spawning a new 3-second timer and making the old one stale — causing the door to stay open indefinitely. With the fix, the door closes reliably after 3 seconds.",
+            "steps": [
+                {
+                    "action": "print",
+                    "message": "Phase 1: Verify clean baseline — all elevators at floor 0, all peers alive and broadcasting."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "bug3-baseline",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 0, "behaviour": "idle"},
+                        "elev2": {"floor": 0, "behaviour": "idle"},
+                        "elev3": {"floor": 0, "behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 2: Inject hall_up floor 2 and cab floor 2 on elev1 to guarantee elev1 serves it. All three peers are alive and will broadcast throughout — this is the spam condition."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_up",
+                    "floor": 2,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "inject_order",
+                    "type": "cab",
+                    "floor": 2,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 3: Wait for elev1 to arrive at floor 2 and open its door."
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 20.0,
+                    "expected": {
+                        "elev1": {"floor": 2, "behaviour": "doorOpen"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 4: Key assertion — door must close within 8s (3s timer + tolerance). With the bug, it never closes because peer broadcasts keep resetting the timer."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "bug3-door-closed-within-timer",
+                    "timeout": 8.0,
+                    "expected": {
+                        "elev1": {"floor": 2, "behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 5: Sleep 3s and verify elev1 is still idle — no phantom re-opens from stale broadcasts."
+                },
+                {
+                    "action": "sleep",
+                    "duration": 3.0
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "bug3-no-phantom-reopen",
+                    "timeout": 3.0,
+                    "expected": {
+                        "elev1": {"behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 6: Log verification — check door_opened count and stale timer events."
+                },
+                {
+                    "action": "verify_logs_extended",
+                    "checks": [
+                        {
+                            "type": "all_hall_orders_cleared"
+                        },
+                        {
+                            "type": "door_open_count",
+                            "node_id": "elev1",
+                            "floor": 2,
+                            "min_count": 1
+                        },
+                        {
+                            "type": "door_open_count_max",
+                            "node_id": "elev1",
+                            "floor": 2,
+                            "max_count": 1
+                        },
+                        {
+                            "type": "no_stale_timer_events",
+                            "node_id": "elev1",
+                            "max_allowed": 0
+                        },
+                        {
+                            "type": "hall_order_served_within",
+                            "floor": 2,
+                            "direction": 0,
+                            "max_seconds": 20.0
+                        }
+                    ]
+                },
+                {
+                    "action": "print",
+                    "message": "BUG3 complete: door closed within 3s timer and no stale timer events were generated."
                 }
             ]
         }

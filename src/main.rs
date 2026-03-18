@@ -76,6 +76,10 @@ fn main() {
 
     startup_peer_sync(&peer_state_rx, &mut system_state);
 
+    // Mark startup sync as complete. After this point, recover_from_backup will
+    // no longer fire in merge_with — this elevator's own cab state is authoritative.
+    system_state.mark_sync_complete();
+
     println!("Post-sync state:");
     println!("{system_state}");
     std::io::stdout().flush().unwrap();
@@ -99,12 +103,26 @@ fn main() {
                         std::io::stdout().flush().unwrap();
                         current_goal = assigner::decide_next_order(&system_state);
 
-                        fsm::step(
-                            &elevator_driver,
-                            &mut system_state,
-                            current_goal,
-                            event_tx.clone()
-                        );
+                        // Do not command the FSM while moving between floors — the
+                        // elevator must reach the next floor sensor before we can
+                        // safely stop or redirect it. The FloorReached event will
+                        // re-evaluate current_goal when the elevator lands.
+                        let between_floors = {
+                            let my_state = system_state.get_my_state();
+                            my_state.get_behavior() == Behaviour::Moving
+                                && my_state.get_floor().is_none()
+                        };
+
+                        if !between_floors {
+                            fsm::step(
+                                &elevator_driver,
+                                &mut system_state,
+                                current_goal,
+                                event_tx.clone(),
+                                false
+                            );
+                        }
+
                         system_state.update_lights(&elevator_driver);
                         state_to_broadcast_tx.send(system_state.clone()).unwrap();
                     }
@@ -131,7 +149,8 @@ fn main() {
                             &elevator_driver,
                             &mut system_state,
                             current_goal,
-                            event_tx.clone()
+                            event_tx.clone(),
+                            false
                         );
 
                         // Refresh the goal after FSM has processed the arrival
@@ -158,7 +177,8 @@ fn main() {
                             &elevator_driver,
                             &mut system_state,
                             current_goal,
-                            event_tx.clone()
+                            event_tx.clone(),
+                            true
                         );
                     },
 
@@ -177,7 +197,8 @@ fn main() {
                             &elevator_driver,
                             &mut system_state,
                             current_goal,
-                            event_tx.clone()
+                            event_tx.clone(),
+                            false
                         );
                     },
 
@@ -201,7 +222,8 @@ fn main() {
                                 &elevator_driver,
                                 &mut system_state,
                                 current_goal,
-                                event_tx.clone()
+                                event_tx.clone(),
+                                false
                             );
                         } else {
                             println!("Ignored stale timer event (ID: {})", timer_id);
@@ -217,7 +239,8 @@ fn main() {
                             &elevator_driver,
                             &mut system_state,
                             None,
-                            event_tx.clone()
+                            event_tx.clone(),
+                            false
                         );
                     },
 
@@ -231,7 +254,8 @@ fn main() {
                                 &elevator_driver,
                                 &mut system_state,
                                 None,
-                                event_tx.clone()
+                                event_tx.clone(),
+                                false
                             );
                         } else {
                             current_goal = assigner::decide_next_order(&system_state);
@@ -239,7 +263,8 @@ fn main() {
                                 &elevator_driver,
                                 &mut system_state,
                                 current_goal,
-                                event_tx.clone()
+                                event_tx.clone(),
+                                false
                             );
                         }
                     }

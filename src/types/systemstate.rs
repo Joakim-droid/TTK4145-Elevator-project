@@ -16,6 +16,8 @@ pub struct SystemState {
     hall_epoch: [[u64; 2]; NUM_FLOORS],
     #[serde(skip)]
     dead_elevators: HashSet<String>,
+    #[serde(skip)]
+    sync_complete: bool,
 }
 
 impl SystemState {
@@ -29,7 +31,12 @@ impl SystemState {
             hall_requests: [[false; 2]; NUM_FLOORS],
             hall_epoch: [[0; 2]; NUM_FLOORS],
             dead_elevators: HashSet::new(),
+            sync_complete: false,
         }
+    }
+
+    pub fn mark_sync_complete(&mut self) {
+        self.sync_complete = true;
     }
 
     pub fn get_my_state(&mut self) -> &mut ElevatorState {
@@ -63,6 +70,16 @@ impl SystemState {
 
     pub fn remove_elevator_record(&mut self, id: &str) {
         self.elevators.remove(id);
+    }
+
+    /// Returns all elevator IDs currently tracked (including self).
+    pub fn get_elevator_ids(&self) -> Vec<String> {
+        self.elevators.keys().cloned().collect()
+    }
+
+    /// Returns an immutable reference to a specific elevator's state, if present.
+    pub fn get_elevator_state(&self, id: &str) -> Option<&ElevatorState> {
+        self.elevators.get(id)
     }
 
     fn set_hall_order(&mut self, arrive: bool, floor: u8, order: OrderType) {
@@ -113,6 +130,23 @@ impl SystemState {
             }
             OrderType::HallDown => {
                 self.hall_epoch[floor][1] = self.hall_epoch[floor][1].saturating_add(1);
+            }
+            OrderType::Cab => {
+                eprintln!("Error: Cannot bump hall epoch for a Cab order");
+            }
+        }
+    }
+
+    fn bump_hall_epoch_clear(&mut self, floor: usize, order: OrderType) {
+        // Bump by 2 on clear so the clear epoch always strictly dominates any
+        // peer that only saw the placement (+1). This prevents the equal-epoch
+        // tie-break in merge_with from restoring a legitimately cleared order.
+        match order {
+            OrderType::HallUp => {
+                self.hall_epoch[floor][0] = self.hall_epoch[floor][0].saturating_add(2);
+            }
+            OrderType::HallDown => {
+                self.hall_epoch[floor][1] = self.hall_epoch[floor][1].saturating_add(2);
             }
             OrderType::Cab => {
                 eprintln!("Error: Cannot bump hall epoch for a Cab order");
@@ -181,11 +215,11 @@ impl SystemState {
         }
 
         if clear_up {
-            self.bump_hall_epoch(floor as usize, OrderType::HallUp);
+            self.bump_hall_epoch_clear(floor as usize, OrderType::HallUp);
             self.set_hall_order(false, floor, OrderType::HallUp);
         }
         if clear_down {
-            self.bump_hall_epoch(floor as usize, OrderType::HallDown);
+            self.bump_hall_epoch_clear(floor as usize, OrderType::HallDown);
             self.set_hall_order(false, floor, OrderType::HallDown);
         }
     }
@@ -224,7 +258,14 @@ impl SystemState {
             }
 
             if id == &self.my_id {
-                changed |= self.get_my_state().recover_from_backup(other_state);
+                // Only restore cab orders from peer backup during the startup sync window.
+                // Once sync_complete is true, this elevator's own cab state is authoritative
+                // and must never be overwritten by a stale peer copy. Applying
+                // recover_from_backup in the main loop causes double door-opens: a peer
+                // carrying a pre-clear cab request restores it after the elevator served it.
+                if !self.sync_complete {
+                    changed |= self.get_my_state().recover_from_backup(other_state);
+                }
                 continue;
             }
 

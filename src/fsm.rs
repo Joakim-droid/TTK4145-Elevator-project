@@ -26,6 +26,7 @@ pub fn step(
     system_state: &mut SystemState,
     goal: Option<u8>,
     event_tx: Sender<Event>,
+    triggered_by_button_press: bool,
 ) {
     let local_elevator_state = system_state.get_my_state();
 
@@ -143,11 +144,15 @@ pub fn step(
                 return;
             }
 
-            // Resets timer if a button on the current floor is pressed while the door is open
-            if let Some(timer_id) = local_elevator_state.open_door() {
-                elevator_driver.door_light(true);
-                spawn_door_timer(timer_id, event_tx.clone());
-                system_state.clear_order(current_floor);
+            // Only reset the timer if this step was triggered by a button press at
+            // this floor. Peer state updates and other events must not reset the timer —
+            // doing so causes timer spam that prevents the door from ever closing.
+            if triggered_by_button_press {
+                if let Some(timer_id) = local_elevator_state.open_door() {
+                    elevator_driver.door_light(true);
+                    spawn_door_timer(timer_id, event_tx.clone());
+                    system_state.clear_order(current_floor);
+                }
             }
         }
     }

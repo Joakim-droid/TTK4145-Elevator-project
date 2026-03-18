@@ -1,7 +1,7 @@
 use crate::types::systemstate::SystemState;
 use std::collections::HashMap;
-use std::process::Command;
 use std::path::PathBuf;
+use std::process::Command;
 
 pub fn decide_next_order(system_state: &SystemState) -> Option<u8> {
     // Serialize data
@@ -10,6 +10,24 @@ pub fn decide_next_order(system_state: &SystemState) -> Option<u8> {
     let dead_peers = system_state.get_dead_elevators().clone();
     for dead_id in dead_peers {
         system_state_clone.remove_elevator_record(&dead_id);
+    }
+
+    // Remove peers that cannot serve orders: obstructed or in emergency stop.
+    // We keep our own entry so the assigner always produces output for my_id.
+    let my_id = system_state_clone.get_my_id();
+    let unavailable_peers: Vec<String> = system_state_clone
+        .get_elevator_ids()
+        .into_iter()
+        .filter(|id| *id != my_id)
+        .filter(|id| {
+            system_state_clone
+                .get_elevator_state(id)
+                .map(|s| s.is_obstructed() || s.is_emergency_stop())
+                .unwrap_or(false)
+        })
+        .collect();
+    for id in unavailable_peers {
+        system_state_clone.remove_elevator_record(&id);
     }
 
     let mut serialized_system_state = serde_json::to_value(&system_state_clone).unwrap();
@@ -59,7 +77,10 @@ pub fn decide_next_order(system_state: &SystemState) -> Option<u8> {
         .expect("Failed to deserialize");
 
         let my_id = system_state_clone.get_my_id();
-        println!("Assigner output for {}: {}", my_id, hall_request_assigner_output_str);
+        println!(
+            "Assigner output for {}: {}",
+            my_id, hall_request_assigner_output_str
+        );
         if let Some(my_orders) = hall_request_assigner_output_value.get(&my_id) {
             for (floor, orders) in my_orders.iter().enumerate() {
                 if orders.iter().any(|&active| active) {

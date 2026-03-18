@@ -801,6 +801,84 @@ def check_door_open_count(
     return r
 
 
+def check_no_stale_timer_events(
+    logs_dir: str,
+    node_id: str,
+    max_allowed: int = 0,
+) -> VerifyResult:
+    """Fail if more than *max_allowed* 'Ignored stale timer event' lines appear
+    in node_id's log. Under normal operation with Bug 3 fixed, this count must
+    be zero for a simple door-open cycle. A non-zero max_allowed can be passed
+    for scenarios involving obstruction-while-moving where one stale event is
+    expected."""
+    r = VerifyResult("no_stale_timer_events")
+    path = os.path.join(logs_dir, f"{node_id}.log")
+    if not os.path.exists(path):
+        r.fail(f"{node_id}: log file not found")
+        return r
+    with open(path) as f:
+        content = f.read()
+    stale = re.findall(r"Ignored stale timer event.*", content)
+    count = len(stale)
+    if count <= max_allowed:
+        r.ok(
+            f"{node_id}: {count} stale timer event(s) — within allowed limit of {max_allowed} ✓"
+        )
+    else:
+        r.fail(
+            f"{node_id}: {count} stale timer event(s) found, expected <= {max_allowed}. "
+            f"First occurrences: {stale[:3]}"
+        )
+    return r
+
+
+def check_door_open_count_max(
+    events: list[dict],
+    node_id: str,
+    floor: int,
+    max_count: int,
+) -> VerifyResult:
+    """Verify that [EVENT] door_opened floor=N appears at most *max_count* times
+    in *node_id*'s log. Used to detect door timer spam: if the door opens far
+    more times than expected, the timer reset guard is not working."""
+    r = VerifyResult("door_open_count_max")
+    label = f"{node_id} door_opened floor={floor} <= {max_count}x"
+    count = sum(
+        1
+        for ev in (events or [])
+        if ev.get("name") == "door_opened" and ev.get("floor") == floor
+    )
+    if count <= max_count:
+        r.ok(f"{label}: observed {count} door_opened event(s) at floor {floor} ✓")
+    else:
+        r.fail(
+            f"{label}: {count} door_opened events at floor {floor}, expected <= {max_count}. "
+            f"This indicates door timer spam."
+        )
+    return r
+
+
+def check_no_stuck_between_floors(logs_dir: str, node_ids: list[str]) -> VerifyResult:
+    """Fail if any node's log contains 'Elevator is stuck between floors'.
+    This indicates Bug 2: the elevator was commanded to stop while between
+    floor sensors, which leaves it permanently stranded."""
+    r = VerifyResult("no_stuck_between_floors")
+    for nid in node_ids:
+        path = os.path.join(logs_dir, f"{nid}.log")
+        if not os.path.exists(path):
+            continue
+        with open(path) as f:
+            content = f.read()
+        stuck = re.findall(r"Elevator is stuck between floors", content)
+        if stuck:
+            r.fail(
+                f"{nid}: 'Elevator is stuck between floors' found {len(stuck)} time(s)"
+            )
+        else:
+            r.ok(f"{nid}: no stuck-between-floors events ✓")
+    return r
+
+
 # ---------------------------------------------------------------------------
 # Timeline dump (verbose diagnostics)
 # ---------------------------------------------------------------------------
@@ -933,6 +1011,27 @@ def run_verification(
                     v.get("min_count", 2),
                 )
             )
+        elif vtype == "door_open_count_max":
+            nid = v["node_id"]
+            results.append(
+                check_door_open_count_max(
+                    all_events.get(nid, []),
+                    nid,
+                    v["floor"],
+                    v.get("max_count", 1),
+                )
+            )
+        elif vtype == "no_stale_timer_events":
+            nid = v["node_id"]
+            results.append(
+                check_no_stale_timer_events(
+                    logs_dir,
+                    nid,
+                    max_allowed=v.get("max_allowed", 0),
+                )
+            )
+        elif vtype == "no_stuck_between_floors":
+            results.append(check_no_stuck_between_floors(logs_dir, list(node_ids)))
         else:
             print(f"  [!] Unknown verification type: {vtype}")
 
