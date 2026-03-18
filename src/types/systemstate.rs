@@ -78,10 +78,6 @@ impl SystemState {
     pub fn arrive_at_floor(&mut self, floor: u8) {
         let local_state = self.get_my_state();
         local_state.set_floor(floor);
-
-        if floor == 0 || floor == (NUM_FLOORS - 1) as u8 {
-            local_state.stop();
-        }
     }
 
     pub fn add_order(&mut self, floor: u8, order: OrderType) {
@@ -174,11 +170,11 @@ impl SystemState {
                 }
             }
             Direction::Stop => {
-                // Idle at floor: serve everyone waiting here
+                // No announced direction of travel: serve one direction per door-open.
+                // Prefer HallUp; the remaining HallDown will be served on the next cycle.
                 if self.hall_requests[floor as usize][0] {
                     clear_up = true;
-                }
-                if self.hall_requests[floor as usize][1] {
+                } else if self.hall_requests[floor as usize][1] {
                     clear_down = true;
                 }
             }

@@ -192,8 +192,6 @@ fn main() {
                                     fsm::spawn_door_timer(new_id, event_tx.clone());
                                 }
                             }
-                            // Use `continue` (via falling through to end of match arm)
-                            // instead of `return` to avoid exiting main().
                         } else if my_state.get_current_timer_id() == timer_id {
                             elevator_driver.door_light(false);
                             my_state.close_door();
@@ -215,19 +213,6 @@ fn main() {
                         let my_state = system_state.get_my_state();
                         my_state.set_obstruction(obstructed);
 
-                        if obstructed {
-                            // Keep door open and invalidate any pending timeout
-                            if let Some(new_id) = my_state.open_door() {
-                                elevator_driver.door_light(true);
-                                let _ = new_id;
-                            }
-                        } else {
-                            if let Some(new_id) = my_state.open_door() {
-                                elevator_driver.door_light(true);
-                                fsm::spawn_door_timer(new_id, event_tx.clone());
-                            }
-                        }
-
                         fsm::step(
                             &elevator_driver,
                             &mut system_state,
@@ -241,12 +226,22 @@ fn main() {
                         my_state.set_emergency_stop(is_stopped);
                         elevator_driver.stop_button_light(is_stopped);
 
-                        fsm::step(
-                            &elevator_driver,
-                            &mut system_state,
-                            None,
-                            event_tx.clone()
-                        );
+                        if is_stopped {
+                            fsm::step(
+                                &elevator_driver,
+                                &mut system_state,
+                                None,
+                                event_tx.clone()
+                            );
+                        } else {
+                            current_goal = assigner::decide_next_order(&system_state);
+                            fsm::step(
+                                &elevator_driver,
+                                &mut system_state,
+                                current_goal,
+                                event_tx.clone()
+                            );
+                        }
                     }
                     Err(_) => println!("Error in event loop"),
                 }

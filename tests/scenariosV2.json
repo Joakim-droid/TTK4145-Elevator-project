@@ -597,7 +597,7 @@
                 },
                 {
                     "action": "print",
-                    "message": "Step A3: Inject hall_up floor 2, hall_down floor 2, and cab floor 2 on elev1. The simulator hall_down key string is 1-indexed, so floor=1 here places hall_down at physical floor 2."
+                    "message": "Step A3: Inject hall_up floor 2, hall_down floor 2, and cab floor 2 on elev1."
                 },
                 {
                     "action": "inject_order",
@@ -666,7 +666,7 @@
                 },
                 {
                     "action": "print",
-                    "message": "Step B1: Inject hall_down floor 1, hall_up floor 1, and cab floor 1 on elev1 (from floor 2). The simulator hall_down key string is 1-indexed, so floor=0 here places hall_down at physical floor 1."
+                    "message": "Step B1: Inject hall_down floor 1, hall_up floor 1, and cab floor 1 on elev1 (from floor 2)."
                 },
                 {
                     "action": "inject_order",
@@ -1158,7 +1158,7 @@
                     "node_id": "elev1"
                 },
                 {
-                    "action": "wait_for_live_state",
+                    "action": "verify_state_live",
                     "label": "elev1-moving-to-hall-order",
                     "timeout": 8.0,
                     "expected": {
@@ -1399,8 +1399,8 @@
             ]
         },
         {
-            "name": "S9: Restart Loop Stability — No Phantom Orders",
-            "description": "Verifies that rapid successive kills and restarts of one elevator (elev1) do not corrupt the distributed state. Each restart generates a new boot_id and resets seq to 0; if merge_with handles boot_id epoch transitions incorrectly, stale network packets could override fresh state, producing phantom cab/hall orders that cause spurious movement. After three rapid restart cycles, all nodes must settle idle at floor 0 with no ghost orders.",
+            "name": "S9: Restart Loop with Order Injection — Chaos Resilience",
+            "description": "Verifies that rapid successive kills and restarts of one elevator (elev1) do not corrupt the distributed state OR lose orders. Orders (both hall and cab) are injected between each kill/restart cycle. Each restart generates a new boot_id and resets seq to 0; if merge_with handles boot_id epoch transitions incorrectly, stale network packets could override fresh state, producing phantom orders or losing real ones. After three chaos cycles with active orders, all orders must be served and the cluster must settle cleanly with no phantom movement.",
             "steps": [
                 {
                     "action": "print",
@@ -1411,115 +1411,180 @@
                     "label": "all-homed-idle-before-s9",
                     "timeout": 15.0,
                     "expected": {
-                        "elev1": {"floor": 0, "behaviour": "idle"},
-                        "elev2": {"floor": 0, "behaviour": "idle"},
-                        "elev3": {"floor": 0, "behaviour": "idle"}
-                    }
-                },
-                {
-                    "action": "print",
-                    "message": "S9 Part B: Restart loop — Killing and restarting elev1 (Iteration 1)"
-                },
-                {
-                    "action": "kill_node",
-                    "node_id": "elev1"
-                },
-                {
-                    "action": "sleep",
-                    "duration": 2.0
-                },
-                {
-                    "action": "start_node",
-                    "node_id": "elev1"
-                },
-                {
-                    "action": "sleep",
-                    "duration": 2.0
-                },
-                {
-                    "action": "print",
-                    "message": "Killing and restarting elev1 (Iteration 2)"
-                },
-                {
-                    "action": "kill_node",
-                    "node_id": "elev1"
-                },
-                {
-                    "action": "sleep",
-                    "duration": 2.0
-                },
-                {
-                    "action": "start_node",
-                    "node_id": "elev1"
-                },
-                {
-                    "action": "sleep",
-                    "duration": 2.0
-                },
-                {
-                    "action": "print",
-                    "message": "Killing and restarting elev1 (Iteration 3)"
-                },
-                {
-                    "action": "kill_node",
-                    "node_id": "elev1"
-                },
-                {
-                    "action": "sleep",
-                    "duration": 2.0
-                },
-                {
-                    "action": "start_node",
-                    "node_id": "elev1"
-                },
-                {
-                    "action": "sleep",
-                    "duration": 2.0
-                },
-                {
-                    "action": "print",
-                    "message": "S9 Part C: Waiting for cluster to stabilize and sync states."
-                },
-                {
-                    "action": "sleep",
-                    "duration": 8.0
-                },
-                {
-                    "action": "verify_state_live",
-                    "label": "cluster-stable-no-phantom-orders",
-                    "timeout": 10.0,
-                    "expected": {
                         "elev1": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
                         "elev2": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
                         "elev3": {"floor": 0, "behaviour": ["idle", "doorOpen"]}
                     }
                 },
                 {
+                    "action": "print",
+                    "message": "S9 Iteration 1: Inject hall_up floor 1 and cab floor 2 on elev1 → kill elev1 → restart → verify orders survive."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_up",
+                    "floor": 1,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 0.3
+                },
+                {
+                    "action": "inject_order",
+                    "type": "cab",
+                    "floor": 2,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 1.0
+                },
+                {
+                    "action": "print",
+                    "message": "Killing elev1 with pending orders (Iteration 1)."
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 2.0
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 3.0
+                },
+                {
+                    "action": "print",
+                    "message": "S9 Iteration 2: Inject hall_down floor 2 → kill elev1 mid-serve → restart → verify order survives."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_down",
+                    "floor": 1,
+                    "node_id": "elev2"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 1.5
+                },
+                {
+                    "action": "print",
+                    "message": "Killing elev1 (may be moving or serving) (Iteration 2)."
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 2.0
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 3.0
+                },
+                {
+                    "action": "print",
+                    "message": "S9 Iteration 3: Inject cab floor 3 on elev1 → kill elev1 → restart → verify order survives."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "cab",
+                    "floor": 3,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 1.0
+                },
+                {
+                    "action": "print",
+                    "message": "Killing elev1 with pending cab order (Iteration 3)."
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 2.0
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 3.0
+                },
+                {
+                    "action": "print",
+                    "message": "S9 Part B: Allowing cluster to serve all pending orders and stabilize."
+                },
+                {
+                    "action": "sleep",
+                    "duration": 30.0
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "cluster-stable-all-orders-served",
+                    "timeout": 10.0,
+                    "expected": {
+                        "elev1": {"behaviour": ["idle", "doorOpen"]},
+                        "elev2": {"behaviour": ["idle", "doorOpen"]},
+                        "elev3": {"behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "S9 Part C: Log verification — all orders served, no phantom orders."
+                },
+                {
                     "action": "verify_logs_extended",
                     "checks": [
                         {
-                            "type": "current_state",
-                            "expected": {
-                                "elev1": {"floor": 0, "behaviour": "idle"}
-                            }
+                            "type": "all_hall_orders_cleared"
                         },
                         {
-                            "type": "current_state",
-                            "expected": {
-                                "elev2": {"floor": 0, "behaviour": "idle"}
-                            }
+                            "type": "hall_order_served",
+                            "floor": 1,
+                            "direction": 0
                         },
                         {
-                            "type": "current_state",
-                            "expected": {
-                                "elev3": {"floor": 0, "behaviour": "idle"}
-                            }
+                            "type": "hall_order_served",
+                            "floor": 2,
+                            "direction": 1
+                        },
+                        {
+                            "type": "cab_order_served",
+                            "node_id": "elev1",
+                            "floor": 2
+                        },
+                        {
+                            "type": "cab_order_served",
+                            "node_id": "elev1",
+                            "floor": 3
+                        },
+                        {
+                            "type": "no_order_stuck",
+                            "max_idle_seconds": 60.0
                         }
                     ]
                 },
                 {
                     "action": "print",
-                    "message": "S9 complete: three rapid restart cycles did not produce phantom orders; all nodes settled idle at floor 0, confirming boot_id epoch synchronization is correct."
+                    "message": "S9 complete: three rapid restart cycles with active orders did not produce phantom orders or lose real orders. All hall and cab orders survived the restarts and were served. Cluster is stable."
                 }
             ]
         },
@@ -1734,7 +1799,7 @@
                 },
                 {
                     "action": "print",
-                    "message": "Step A4: Sleep 1s so elev1 is mid-journey, then press emergency stop."
+                    "message": "Step A4: Sleep 1s so elev1 is mid-journey, then press emergency stop. The simulator auto-releases the stop button after 200ms (btnDepressedTime_ms=200), so EmergencyStop(true) and EmergencyStop(false) are both fired within 200ms. The halt is too brief to observe via UDP polling, but the behaviour_sequence log check (Step B4) proves it happened."
                 },
                 {
                     "action": "sleep",
@@ -1747,74 +1812,15 @@
                 },
                 {
                     "action": "print",
-                    "message": "Step A5: Verify elev1 transitions to idle within 3s — motor must stop."
-                },
-                {
-                    "action": "verify_state_live",
-                    "label": "elev1-halted-by-emergency-stop",
-                    "timeout": 3.0,
-                    "expected": {
-                        "elev1": {"behaviour": "idle"}
-                    }
+                    "message": "=== Part B: Stop auto-releases after 200ms — elevator resumes automatically ==="
                 },
                 {
                     "action": "print",
-                    "message": "Step A6: Sleep 2s and verify elev1 is still stopped — it must not spontaneously resume while stop is active."
-                },
-                {
-                    "action": "sleep",
-                    "duration": 2.0
-                },
-                {
-                    "action": "verify_state_live",
-                    "label": "elev1-still-stopped",
-                    "timeout": 2.0,
-                    "expected": {
-                        "elev1": {"behaviour": "idle"}
-                    }
+                    "message": "Step B1: The simulator's btnDepressedTime_ms=200 means the stop button auto-releases 200ms after the press in Part A. The EmergencyStop(false) event fires automatically. With the fix, the release handler calls decide_next_order and fsm::step(goal), so elev1 resumes without any re-injection."
                 },
                 {
                     "action": "print",
-                    "message": "=== Part B: Release stop — elevator resumes after re-injecting the pending order ==="
-                },
-                {
-                    "action": "print",
-                    "message": "Step B1: Sleep 1s to ensure the 200ms btnDepressedTime window from Part A has fully expired before releasing stop."
-                },
-                {
-                    "action": "sleep",
-                    "duration": 1.0
-                },
-                {
-                    "action": "print",
-                    "message": "Step B2: Release emergency stop by toggling the stop button again."
-                },
-                {
-                    "action": "inject_order",
-                    "type": "stop_button_toggle",
-                    "node_id": "elev1"
-                },
-                {
-                    "action": "print",
-                    "message": "Step B3: Sleep 0.5s to let the release event settle before re-injecting the cab order."
-                },
-                {
-                    "action": "sleep",
-                    "duration": 0.5
-                },
-                {
-                    "action": "print",
-                    "message": "Step B4: Re-inject the cab floor 3 order. After stop release, the FSM needs a new event to re-evaluate the pending order. Re-pressing the cab button triggers ButtonPressed → assigner → FSM and resumes movement."
-                },
-                {
-                    "action": "inject_order",
-                    "type": "cab",
-                    "floor": 3,
-                    "node_id": "elev1"
-                },
-                {
-                    "action": "print",
-                    "message": "Step B5: Verify elev1 resumes moving toward floor 3 within 5s."
+                    "message": "Step B2: Verify elev1 resumes moving toward floor 3 within 5s of the stop press."
                 },
                 {
                     "action": "verify_state_live",
@@ -1826,7 +1832,7 @@
                 },
                 {
                     "action": "print",
-                    "message": "Step B6: Verify elev1 eventually reaches floor 3 and opens its door — the cab order must be served."
+                    "message": "Step B3: Verify elev1 eventually reaches floor 3 and opens its door — the cab order must be served."
                 },
                 {
                     "action": "verify_state_live",
@@ -1845,7 +1851,7 @@
                 },
                 {
                     "action": "print",
-                    "message": "Step B7: Log verification — cab order served, no phantom movement."
+                    "message": "Step B4: Log verification — cab order served, correct behaviour sequence."
                 },
                 {
                     "action": "verify_logs_extended",
@@ -1864,7 +1870,7 @@
                 },
                 {
                     "action": "print",
-                    "message": "S12 complete: emergency stop halted the motor immediately; releasing stop allowed the elevator to resume and serve the pending cab order."
+                    "message": "S12 complete: emergency stop halted the motor immediately; the simulator auto-released the stop button after 200ms, triggering auto-resume via the fixed EmergencyStop(false) handler, and elev1 served the pending cab order without any re-injection."
                 }
             ]
         },
@@ -2143,6 +2149,343 @@
                 {
                     "action": "print",
                     "message": "S13 complete: single surviving elevator detected both peers as dead, self-assigned both pending hall orders, and served them alone. Cluster restored cleanly."
+                }
+            ]
+        },
+        {
+            "name": "SX-D: Bug Verification — Emergency Stop Release Does Not Auto-Resume",
+            "description": "Verifies that releasing the emergency stop button causes the elevator to automatically resume serving its pending order WITHOUT any re-injection. The bug: Event::EmergencyStop always calls fsm::step with goal=None, so on release (is_stopped=false) the elevator stays idle. The fix: on release, re-evaluate current_goal and pass it to fsm::step so the elevator resumes immediately.",
+            "steps": [
+                {
+                    "action": "verify_state_live",
+                    "label": "sxd-all-homed",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev2": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev3": {"floor": 0, "behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev2"
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev3"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 2.0
+                },
+                {
+                    "action": "print",
+                    "message": "SX-D Step 1: Inject cab floor 3 on elev1 to send it upward."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "cab",
+                    "floor": 3,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 8.0,
+                    "expected": {
+                        "elev1": {"behaviour": "moving"}
+                    }
+                },
+                {
+                    "action": "sleep",
+                    "duration": 1.0
+                },
+                {
+                    "action": "print",
+                    "message": "SX-D Step 2: Press emergency stop mid-journey. The simulator auto-releases after 200ms, firing EmergencyStop(true) then EmergencyStop(false) automatically."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "stop_button_toggle",
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 1.0
+                },
+                {
+                    "action": "print",
+                    "message": "SX-D Step 3: Verify elev1 resumes moving automatically — the fix re-evaluates current_goal on EmergencyStop(false) and calls fsm::step with the goal."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "sxd-elev1-resumed-automatically",
+                    "timeout": 5.0,
+                    "expected": {
+                        "elev1": {"behaviour": "moving"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "SX-D Step 4: Verify elev1 reaches floor 3 and serves the cab order."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "sxd-elev1-served-cab-floor3",
+                    "timeout": 25.0,
+                    "expected": {
+                        "elev1": {"floor": 3, "behaviour": ["doorOpen", "idle"]}
+                    }
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 10.0,
+                    "expected": {
+                        "elev1": {"floor": 3, "behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev2"
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev3"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 5.0
+                },
+                {
+                    "action": "verify_logs_extended",
+                    "checks": [
+                        {"type": "cab_order_served", "node_id": "elev1", "floor": 3},
+                        {"type": "behaviour_sequence", "node_id": "elev1", "sequence": ["moving", "idle", "moving", "doorOpen", "idle"]}
+                    ]
+                },
+                {
+                    "action": "print",
+                    "message": "SX-D complete: emergency stop release auto-resumes pending order without re-injection."
+                }
+            ]
+        },
+        {
+            "name": "SX-B: Bug Verification — arrive_at_floor Corrupts Direction at Boundary Floors",
+            "description": "Verifies that arrive_at_floor does NOT call stop() at boundary floors 0 and 3, which would corrupt the direction before clear_order runs. Concrete test: elevator moving UP to floor 3 with HallDown at floor 3. Without the fix, stop() sets direction=Stop before clear_order, so the Stop-arm clears HallDown on the first door-open. With the fix, direction=Up is preserved and clear_order(Up) does NOT clear HallDown — requiring a second door-open via the Stop arm.",
+            "steps": [
+                {
+                    "action": "verify_state_live",
+                    "label": "sxb-all-homed",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev2": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev3": {"floor": 0, "behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev2"
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev3"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 2.0
+                },
+                {
+                    "action": "print",
+                    "message": "SX-B Step 1: Inject hall_down floor 3 (key f = floor index 2 in hall_down keys) and cab floor 3 on elev1. The cab forces elev1 upward; hall_down is the order we test."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_down",
+                    "floor": 2,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "inject_order",
+                    "type": "cab",
+                    "floor": 3,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "SX-B Step 2: Wait for elev1 to start moving upward."
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 8.0,
+                    "expected": {
+                        "elev1": {"behaviour": "moving", "direction": "up"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "SX-B Step 3: Verify first door-open at floor 3."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "sxb-first-dooropen-floor3",
+                    "timeout": 20.0,
+                    "expected": {
+                        "elev1": {"floor": 3, "behaviour": "doorOpen"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "SX-B Step 4: Verify second door-open at floor 3 — proves HallDown was NOT cleared on the first pass (Direction::Up preserved). Bug: second door-open never happens because stop() corrupted direction to Stop."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "sxb-second-dooropen-floor3-proves-direction-preserved",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 3, "behaviour": "doorOpen"}
+                    }
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 10.0,
+                    "expected": {
+                        "elev1": {"behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev2"
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev3"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 5.0
+                },
+                {
+                    "action": "verify_logs_extended",
+                    "checks": [
+                        {"type": "all_hall_orders_cleared"},
+                        {"type": "hall_order_served", "floor": 3, "direction": 1},
+                        {"type": "cab_order_served", "node_id": "elev1", "floor": 3},
+                        {"type": "door_open_count", "node_id": "elev1", "floor": 3, "min_count": 2}
+                    ]
+                },
+                {
+                    "action": "print",
+                    "message": "SX-B complete: arrive_at_floor does not corrupt direction at boundary floors."
+                }
+            ]
+        },
+        {
+            "name": "SX-A: Bug Verification — Stop Direction Clears Both Hall Orders",
+            "description": "Verifies that when an elevator is already idle at a floor and gets assigned that floor (Direction::Stop path), it does NOT clear both HallUp and HallDown simultaneously. The elevator must open its door twice: once to clear HallUp, and a second time to clear HallDown.",
+            "steps": [
+                {
+                    "action": "verify_state_live",
+                    "label": "sxa-all-homed",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev2": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev3": {"floor": 0, "behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev2"
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev3"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 2.0
+                },
+                {
+                    "action": "print",
+                    "message": "Step 1: Move elev1 to floor 1 via cab so it is idle there."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "cab",
+                    "floor": 1,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "sxa-elev1-idle-at-floor1",
+                    "timeout": 20.0,
+                    "expected": {
+                        "elev1": {"floor": 1, "behaviour": "idle"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Step 2: Now inject hall_up and hall_down at floor 1. Elevator is already there (Direction::Stop path)."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_up",
+                    "floor": 1,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "inject_order",
+                    "type": "hall_down",
+                    "floor": 0,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "sxa-first-dooropen-floor1",
+                    "timeout": 10.0,
+                    "expected": {
+                        "elev1": {"floor": 1, "behaviour": "doorOpen"}
+                    }
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "sxa-second-door-open-proves-down-preserved",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 1, "behaviour": "doorOpen"}
+                    }
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "expected": {
+                        "elev1": {"behaviour": "idle"}
+                    },
+                    "timeout": 10.0
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev2"
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev3"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 5.0
+                },
+                {
+                    "action": "verify_logs_extended",
+                    "checks": [
+                        {"type": "all_hall_orders_cleared"},
+                        {"type": "hall_order_served", "floor": 1, "direction": 0},
+                        {"type": "hall_order_served", "floor": 1, "direction": 1},
+                        {"type": "door_open_count", "node_id": "elev1", "floor": 1, "min_count": 2}
+                    ]
+                },
+                {
+                    "action": "print",
+                    "message": "SX-A complete: Stop-direction clear-order serves one direction per door-open."
                 }
             ]
         }

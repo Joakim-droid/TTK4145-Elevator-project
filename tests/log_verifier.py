@@ -418,22 +418,26 @@ def check_state_broadcast_health(logs: dict[str, list[StateSnap]]) -> VerifyResu
     """
     Each node should appear in the other nodes' state snapshots, confirming
     network broadcasting is working and merge is happening.
+    Only nodes with >= 5 snapshots are considered 'fully alive' — nodes with
+    fewer snapshots were likely killed before discovering all peers.
     """
     r = VerifyResult("state_broadcast_health")
     all_reporters = list(logs.keys())
-    seen_by: dict[str, set[str]] = {nid: set() for nid in all_reporters}
 
-    for reporter, snaps in logs.items():
-        for snap in snaps:
+    # Nodes with enough snapshots to be considered fully alive during the scenario.
+    alive_nodes = {nid for nid in all_reporters if len(logs.get(nid, [])) >= 5}
+
+    seen_by: dict[str, set[str]] = {nid: set() for nid in alive_nodes}
+
+    for reporter in alive_nodes:
+        for snap in logs[reporter]:
             for other_nid in snap.elevators:
                 if other_nid != reporter:
                     seen_by[reporter].add(other_nid)
 
     for reporter, seen in seen_by.items():
-        # Skip nodes with very few snapshots — they were likely killed before discovering peers.
-        if len(logs.get(reporter, [])) < 5:
-            continue
-        missing = set(all_reporters) - {reporter} - seen
+        # Only require the reporter to have seen other *alive* nodes.
+        missing = alive_nodes - {reporter} - seen
         if missing:
             r.fail(f"{reporter} never saw state from: {', '.join(sorted(missing))}")
         else:

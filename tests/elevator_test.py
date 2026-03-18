@@ -552,12 +552,15 @@ def execute_door_kill(floor, timeout):
 
 def home_elevators():
     print("[*] Homing all elevators to Floor 0...")
-    for node_id in NODES.keys():
+    # Only home nodes that are currently running — dead nodes cannot receive
+    # cab orders or appear in the UDP state, so including them causes the
+    # all_at_home condition to never be satisfied.
+    alive_nodes = [nid for nid in NODES.keys() if nid in node_processes]
+    for node_id in alive_nodes:
         inject_order("cab", 0, node_id)
 
-    # Wait until all elevators are at Floor 0 and Idle (or DoorOpen then Idle)
     def all_at_home(state):
-        for nid in NODES.keys():
+        for nid in alive_nodes:
             nstate = state.get("states", {}).get(nid)
             if not nstate:
                 return False
