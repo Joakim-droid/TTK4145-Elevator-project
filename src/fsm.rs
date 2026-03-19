@@ -128,6 +128,19 @@ pub fn step(
                 // TODO: Clear orders at this floor
                 system_state.clear_order(current_floor);
                 println!("[EVENT] order_cleared floor={}", current_floor);
+            } else {
+                let desired_direction = find_direction(current_floor, goal);
+                if desired_direction != local_elevator_state.get_direction() {
+                    println!(
+                        "[EVENT] motor_reverse floor={} from={:?} to={:?} goal={}",
+                        current_floor,
+                        local_elevator_state.get_direction(),
+                        desired_direction,
+                        goal
+                    );
+                    elevator_driver.motor_direction(desired_direction.into());
+                    local_elevator_state.set_direction(desired_direction);
+                }
             }
         }
 
