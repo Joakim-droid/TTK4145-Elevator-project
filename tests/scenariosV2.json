@@ -2924,6 +2924,149 @@
                     "message": "BUG3 complete: door closed within 3s timer and no stale timer events were generated."
                 }
             ]
+        },
+        {
+            "name": "BUG4: Reverse When New Cab Appears Behind",
+            "description": "Regression test for moving-direction update while in transit. elev1 starts moving from floor 1 toward cab floor 2. While moving up, a new cab order at floor 1 is injected. The elevator must serve floor 2 first, then reverse and return to floor 1 (must not continue upward past top due to stale direction).",
+            "steps": [
+                {
+                    "action": "print",
+                    "message": "Phase 1: Verify clean baseline."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "bug4-baseline",
+                    "timeout": 15.0,
+                    "expected": {
+                        "elev1": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev2": {"floor": 0, "behaviour": ["idle", "doorOpen"]},
+                        "elev3": {"floor": 0, "behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 2: Isolate elev1 so cab assignments are deterministic."
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev2"
+                },
+                {
+                    "action": "kill_node",
+                    "node_id": "elev3"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 2.0
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 3: Move elev1 to floor 1 and wait until idle there."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "cab",
+                    "floor": 1,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 20.0,
+                    "expected": {
+                        "elev1": {"floor": 1, "behaviour": ["idle", "doorOpen"]}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 4: Inject cab floor 2 so elev1 starts moving up."
+                },
+                {
+                    "action": "inject_order",
+                    "type": "cab",
+                    "floor": 2,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "bug4-elev1-moving-up",
+                    "timeout": 8.0,
+                    "expected": {
+                        "elev1": {"behaviour": "moving"}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 5: While moving up, inject new cab floor 1 behind the elevator."
+                },
+                {
+                    "action": "sleep",
+                    "duration": 1.0
+                },
+                {
+                    "action": "inject_order",
+                    "type": "cab",
+                    "floor": 1,
+                    "node_id": "elev1"
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 6: Verify floor 2 is served first, then elevator returns to floor 1 and serves it."
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "bug4-served-floor2",
+                    "timeout": 20.0,
+                    "expected": {
+                        "elev1": {"floor": 2, "behaviour": ["doorOpen", "idle"]}
+                    }
+                },
+                {
+                    "action": "verify_state_live",
+                    "label": "bug4-returned-floor1",
+                    "timeout": 35.0,
+                    "expected": {
+                        "elev1": {"floor": 1, "behaviour": ["doorOpen", "idle"]}
+                    }
+                },
+                {
+                    "action": "wait_for_live_state",
+                    "timeout": 20.0,
+                    "expected": {
+                        "elev1": {"floor": 2, "behaviour": ["doorOpen", "idle"]}
+                    }
+                },
+                {
+                    "action": "print",
+                    "message": "Phase 7: Restart peers and verify logs."
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev2"
+                },
+                {
+                    "action": "start_node",
+                    "node_id": "elev3"
+                },
+                {
+                    "action": "sleep",
+                    "duration": 4.0
+                },
+                {
+                    "action": "verify_logs_extended",
+                    "checks": [
+                        {
+                            "type": "cab_order_served",
+                            "node_id": "elev1",
+                            "floor": 2
+                        },
+                        {
+                            "type": "cab_order_served",
+                            "node_id": "elev1",
+                            "floor": 1
+                        }
+                    ]
+                }
+            ]
         }
     ]
 }
