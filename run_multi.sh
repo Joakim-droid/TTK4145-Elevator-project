@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Define the nodes: "ID SIM_PORT"
+# Define the nodes: "ID elevatorserver_port"
 NODES=(
   "elev1 15657"
   "elev2 15658"
@@ -11,7 +11,7 @@ NODES=(
 )
 
 # Shared broadcast port
-BCAST_PORT=16659
+broadcast_port=16659
 
 wait_for_simulator() {
   local port="$1"
@@ -83,7 +83,7 @@ cargo build
 
 echo "Starting simulators..."
 for node in "${NODES[@]}"; do
-  read -r id sim_port <<<"$node"
+  read -r id elevatorserver_port <<<"$node"
   
   SIM_CMD="./SimElevatorServer"
   # Support Windows .exe fallback
@@ -91,26 +91,26 @@ for node in "${NODES[@]}"; do
     SIM_CMD="./SimElevatorServer.exe"
   fi
   
-  open_terminal "Sim $sim_port" "$ROOT_DIR/execs" "$SIM_CMD --port $sim_port"
+  open_terminal "Sim $elevatorserver_port" "$ROOT_DIR/execs" "$SIM_CMD --port $elevatorserver_port"
 done
 
 echo "Waiting for simulators to accept connections..."
 for node in "${NODES[@]}"; do
-  read -r id sim_port <<<"$node"
-  if wait_for_simulator "$sim_port"; then
-    echo "Simulator for $id on port $sim_port is ready"
+  read -r id elevatorserver_port <<<"$node"
+  if wait_for_simulator "$elevatorserver_port"; then
+    echo "Simulator for $id on port $elevatorserver_port is ready"
   else
-    echo "Timed out waiting for simulator $id on port $sim_port"
+    echo "Timed out waiting for simulator $id on port $elevatorserver_port"
     exit 1
   fi
 done
 
 echo "Starting Rust nodes..."
 for node in "${NODES[@]}"; do
-  read -r id sim_port <<<"$node"
-  echo "Launching $id on port $sim_port..."
+  read -r id elevatorserver_port <<<"$node"
+  echo "Launching $id on port $elevatorserver_port..."
   
-  open_terminal "Node $id" "$ROOT_DIR" "./target/debug/TTK4145-Elevator-project $id $sim_port $BCAST_PORT"
+  open_terminal "Node $id" "$ROOT_DIR" "./target/debug/TTK4145-Elevator-project $id $elevatorserver_port $broadcast_port"
 done
 
 echo "Done. All nodes launched."
