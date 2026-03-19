@@ -118,7 +118,10 @@ pub fn step(
 
             let goal = goal.unwrap();
 
-            if current_floor == goal
+            let should_serve_here =
+                current_floor == goal || local_elevator_state.get_cab_request(current_floor);
+
+            if should_serve_here
                 && let Some(timer_id) = local_elevator_state.open_door()
             {
                 println!("[EVENT] door_opened floor={}", current_floor);
