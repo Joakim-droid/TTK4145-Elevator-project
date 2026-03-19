@@ -4,6 +4,7 @@ use crate::{
         initialize_elevator_position, spawn_button_poller, spawn_floor_poller,
         spawn_obstruction_poller, spawn_stop_button_poller,
     },
+    logger::LogEvent,
     network::{spawn_peer_discovery, spawn_state_broadcast, startup_peer_sync},
     types::{
         direction::Direction, elevator::Behaviour, event::Event, orders::OrderType,
@@ -12,11 +13,11 @@ use crate::{
 };
 use crossbeam_channel::{self as cbc, select};
 use driver_rust::elevio::elev::Elevator;
-use std::io::Write;
 mod assigner;
 mod config;
 mod fsm;
 mod hardware;
+mod logger;
 mod network;
 mod parser;
 mod types;
@@ -32,12 +33,11 @@ fn main() {
     let (my_id, sim_port, bcast_port) = parser::parse();
     let elevator_address = format!("localhost:{}", sim_port);
 
-    println!(
-        "Starting elevator '{}' connecting to simulator on {} (broadcast_port={})",
-        my_id, elevator_address, bcast_port
-    );
-    // TODO: Used for debugging in test script, remove later
-    std::io::stdout().flush().unwrap();
+    logger::log(LogEvent::Startup {
+        node_id: &my_id,
+        sim_port,
+        bcast_port,
+    });
 
     let elevator_driver =
         Elevator::init(&elevator_address, NUM_FLOORS as u8).expect("Error connecting to Elevator");
@@ -63,10 +63,9 @@ fn main() {
         peer_state_tx,
     );
 
-    println!("Initial state:");
-    println!("{system_state}");
-    // TODO: Used for debugging in test script, remove later
-    std::io::stdout().flush().unwrap();
+    logger::log(LogEvent::InitialState {
+        state: &system_state,
+    });
 
     // Prime the broadcast ticker before the sync window so peers receive our
     // heartbeats and can send us their state (including our backed-up cab orders).
@@ -80,9 +79,9 @@ fn main() {
     // no longer fire in merge_with — this elevator's own cab state is authoritative.
     system_state.mark_sync_complete();
 
-    println!("Post-sync state:");
-    println!("{system_state}");
-    std::io::stdout().flush().unwrap();
+    logger::log(LogEvent::PostSyncState {
+        state: &system_state,
+    });
 
     // Send the recovered (merged) state so peers learn our final post-sync view.
     state_to_broadcast_tx.send(system_state.clone()).unwrap();
@@ -97,10 +96,9 @@ fn main() {
             recv(peer_state_rx) -> msg => {
                 if let Ok(fetched_state) = msg {
                     if system_state.merge_with(&fetched_state) {
-                        println!("Received state from network");
-                        println!("{system_state}");
-                        // TODO: Used for debugging in test script, remove later
-                        std::io::stdout().flush().unwrap();
+                        logger::log(LogEvent::SystemStateReceived {
+                            state: &system_state,
+                        });
                         current_goal = assigner::decide_next_order(&system_state);
 
                         // Do not command the FSM while moving between floors — the
@@ -132,7 +130,7 @@ fn main() {
             recv(event_rx) -> event => {
                 match event {
                     Ok(Event::FloorReached(floor)) => {
-                        println!("[EVENT] floor_reached floor={}", floor);
+                        logger::log(LogEvent::FloorReached { floor });
                         system_state.arrive_at_floor(floor);
                         elevator_driver.floor_indicator(floor);
 
@@ -188,7 +186,7 @@ fn main() {
                         }
 
                         for id in &update.lost {
-                            println!("Elevator dead: {}", id);
+                            logger::log(LogEvent::ElevatorDead { id });
                             system_state.peer_lost(id);
                         }
 
@@ -226,7 +224,7 @@ fn main() {
                                 false
                             );
                         } else {
-                            println!("Ignored stale timer event (ID: {})", timer_id);
+                            logger::log(LogEvent::StaleTimer { timer_id });
                         }
 
                     },
@@ -243,7 +241,7 @@ fn main() {
                                 event_tx.clone(),
                                 false
                             );
-        
+
                         } else {
                             let hardware_floor = elevator_driver.floor_sensor();
                             if hardware_floor.is_some(){
@@ -280,13 +278,12 @@ fn main() {
                             );
                         }
                     }
-                    Err(_) => println!("Error in event loop"),
+                    Err(_) => eprintln!("Error in event loop"),
                 }
                 system_state.update_lights(&elevator_driver);
-                println!("Local event handled");
-                println!("{system_state}");
-                // TODO: Used for debugging in test script, remove later
-                std::io::stdout().flush().unwrap();
+                logger::log(LogEvent::SystemStateLocal {
+                    state: &system_state,
+                });
                 state_to_broadcast_tx.send(system_state.clone()).unwrap();
             }
         }

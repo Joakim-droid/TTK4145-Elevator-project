@@ -1,3 +1,4 @@
+use crate::logger::{self, LogEvent};
 use crate::types::{
     direction::Direction, event::Event, orders::OrderType, systemstate::SystemState,
 };
@@ -22,7 +23,6 @@ pub fn initialize_elevator_position(elevator: &Elevator, system_state: &mut Syst
 
     elevator.motor_direction(Direction::Down.into());
 
-    // TODO: Used for debugging in test script, remove later
     let mut stuck_counter = 0;
     loop {
         if let Some(floor) = elevator.floor_sensor() {
@@ -36,9 +36,7 @@ pub fn initialize_elevator_position(elevator: &Elevator, system_state: &mut Syst
         sleep(Duration::from_millis(20));
         stuck_counter += 1;
         if stuck_counter % 50 == 0 {
-            println!("Still homing... floor sensor is None.");
-            use std::io::Write;
-            std::io::stdout().flush().unwrap();
+            logger::log(LogEvent::Homing);
         }
     }
 }

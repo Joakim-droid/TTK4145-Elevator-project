@@ -1,3 +1,4 @@
+use crate::logger::{self, LogEvent};
 use crate::types::systemstate::SystemState;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -40,6 +41,10 @@ pub fn decide_next_order(system_state: &SystemState) -> Option<u8> {
     let hall_request_assigner_json =
         serde_json::to_string(&serialized_system_state).expect("Failed to serialize data");
 
+    logger::log(LogEvent::AssignerInput {
+        json: &hall_request_assigner_json,
+    });
+
     let mut candidates: Vec<PathBuf> = vec![
         PathBuf::from("./execs/hall_request_assigner"),
         PathBuf::from("../execs/hall_request_assigner"),
@@ -77,20 +82,17 @@ pub fn decide_next_order(system_state: &SystemState) -> Option<u8> {
         .expect("Failed to deserialize");
 
         let my_id = system_state_clone.get_my_id();
-        println!(
-            "Assigner output for {}: {}",
-            my_id, hall_request_assigner_output_str
-        );
         if let Some(my_orders) = hall_request_assigner_output_value.get(&my_id) {
             for (floor, orders) in my_orders.iter().enumerate() {
                 if orders.iter().any(|&active| active) {
-                    println!("Assigner decided goal floor: {}", floor);
-                    return Some(floor as u8);
+                    let goal = Some(floor as u8);
+                    logger::log(LogEvent::AssignerDecision { goal });
+                    return goal;
                 }
             }
         }
 
-        println!("Assigner decided goal floor: None");
+        logger::log(LogEvent::AssignerDecision { goal: None });
         None
     } else {
         let error_msg = String::from_utf8_lossy(&program_out.stderr);

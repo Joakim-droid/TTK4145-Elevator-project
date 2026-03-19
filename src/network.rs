@@ -1,3 +1,4 @@
+use crate::logger::{self, LogEvent};
 use crate::{
     config::{
         HALL_ORDER_BROADCAST_REDUNDANCY, PEER_DISCOVERY_INTERVAL, PEER_DISCOVERY_TIMEOUT,
@@ -5,7 +6,7 @@ use crate::{
     },
     types::{event::Event, systemstate::SystemState},
 };
-use crossbeam_channel::{self as cbc, Receiver, Sender, select};
+use crossbeam_channel::{self as cbc, select, Receiver, Sender};
 use network_rust::udpnet::peers::PeerUpdate;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use std::{
@@ -43,7 +44,7 @@ pub fn spawn_state_broadcast(
     eager_state_rx: Receiver<SystemState>,
     peer_state_tx: Sender<SystemState>,
 ) {
-    println!("State broadcast spawned on port {}", port);
+    logger::log(LogEvent::StateBroadcastSpawned { port });
 
     fn send_state(sock: &UdpSocket, remote_addr: SocketAddrV4, data: &SystemState, n: usize) {
         let serialized = match serde_json::to_vec(data) {
@@ -119,7 +120,7 @@ pub fn spawn_state_broadcast(
 }
 
 pub fn spawn_peer_discovery(my_id: String, event_tx: Sender<Event>, port: u16) {
-    println!("Peer discovery spawned on port {}", port);
+    logger::log(LogEvent::PeerDiscoverySpawned { port });
 
     let tx_id = my_id.clone();
     thread::spawn(move || {

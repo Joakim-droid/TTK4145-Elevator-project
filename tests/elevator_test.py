@@ -220,8 +220,8 @@ def cleanup_noise():
 
 
 def build_project():
-    print("[*] Compiling Rust project...")
-    subprocess.run(["cargo", "build"], check=True)
+    print("[*] Compiling Rust project with test logging enabled...")
+    subprocess.run(["cargo", "build", "--features", "test-logging"], check=True)
 
 
 def wait_for_simulator(port, timeout=10):
