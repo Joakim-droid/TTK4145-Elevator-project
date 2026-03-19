@@ -47,7 +47,7 @@ pub fn step(
         return;
     }
 
-    if local_elevator_state.is_obstructed() {
+    if local_elevator_state.is_obstructed() && is_floor{
         if local_elevator_state.get_behavior() == Behaviour::Moving {
             elevator_driver.motor_direction(Direction::Stop.into());
             local_elevator_state.stop();

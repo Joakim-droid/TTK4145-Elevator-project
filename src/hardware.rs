@@ -110,19 +110,19 @@ pub fn spawn_obstruction_poller(elevator: &Elevator, channel_sender: Sender<Even
     let elevator_handler = elevator.clone();
 
     thread::spawn(move || {
-        let mut prev_val: Option<bool> = None;
+        let mut prev_val: bool = false;
 
         loop {
             let obstructed = elevator_handler.obstruction();
 
-            if prev_val == Some(obstructed) {
+            if prev_val == obstructed {
                 sleep(Duration::from_millis(20));
                 continue;
             }
             if channel_sender.send(Event::Obstructed(obstructed)).is_err() {
                 break;
             }
-            prev_val = Some(obstructed);
+            prev_val = obstructed;
             sleep(Duration::from_millis(20));
         }
     });
