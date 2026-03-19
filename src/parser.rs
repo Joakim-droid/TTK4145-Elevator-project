@@ -1,3 +1,5 @@
+//! Command-line argument parsing for node identity, simulator port, and broadcast port selection.
+
 use crate::config::SYSTEMSTATE_BROADCAST_PORT;
 
 fn print_usage(program: &str) {

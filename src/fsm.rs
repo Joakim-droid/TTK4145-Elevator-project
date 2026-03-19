@@ -1,3 +1,5 @@
+//! Finite-state machine for elevator motion, door handling, and order servicing decisions.
+
 use crate::{
     config::DOOR_OPEN_DURATION,
     types::{direction::Direction, elevator::Behaviour, event::Event, systemstate::SystemState},

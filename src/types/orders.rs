@@ -1,3 +1,5 @@
+//! Order type definitions for hall and cab requests.
+
 use core::fmt;
 use serde::{Deserialize, Serialize};
 

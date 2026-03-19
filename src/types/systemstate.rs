@@ -1,3 +1,5 @@
+//! Distributed system state for all elevators, including hall orders, merge rules, and lamp updates.
+
 use crate::types::direction::Direction;
 use crate::types::elevator::{Behaviour, ElevatorState};
 use crate::{config::NUM_FLOORS, types::orders::OrderType};

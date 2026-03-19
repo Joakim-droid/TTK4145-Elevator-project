@@ -1,3 +1,5 @@
+//! Direction type for elevator movement, with conversions to the hardware driver.
+
 use driver_rust::elevio::elev::{DIRN_DOWN, DIRN_STOP, DIRN_UP};
 use serde::{Deserialize, Serialize};
 

@@ -1,3 +1,5 @@
+//! Central configuration values for timing, floor count, and network ports.
+
 use std::time::Duration;
 
 pub const NUM_FLOORS: usize = 4;

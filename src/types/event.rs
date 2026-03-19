@@ -1,3 +1,5 @@
+//! Event definitions for messages produced by hardware polling, timers, and network updates.
+
 use crate::types::orders::OrderType;
 use network_rust::udpnet;
 

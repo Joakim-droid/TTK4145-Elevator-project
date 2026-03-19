@@ -1,3 +1,5 @@
+//! Hardware integration helpers for startup homing and polling simulator inputs into events.
+
 use crate::types::{
     direction::Direction, event::Event, orders::OrderType, systemstate::SystemState,
 };

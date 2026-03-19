@@ -1,3 +1,5 @@
+//! Local elevator state, behaviour transitions, and versioning data used during state merges.
+
 use crate::{config::NUM_FLOORS, types::direction::Direction};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};

@@ -1,3 +1,5 @@
+//! Integrates with the external hall request assigner and picks the local elevator's next goal.
+
 use crate::types::systemstate::SystemState;
 use std::collections::HashMap;
 use std::path::PathBuf;

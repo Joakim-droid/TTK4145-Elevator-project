@@ -1,3 +1,5 @@
+//! UDP-based peer discovery and state replication for coordinating multiple elevator nodes.
+
 use crate::{
     config::{
         HALL_ORDER_BROADCAST_REDUNDANCY, PEER_DISCOVERY_INTERVAL, PEER_DISCOVERY_TIMEOUT,

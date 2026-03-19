@@ -1,3 +1,6 @@
+//! Entry point for the elevator node.
+//! Initializes hardware, networking, and shared state, then runs the main event loop.
+
 use crate::{
     config::{NUM_FLOORS, PEER_DISCOVERY_BCAST_PORT},
     hardware::{
