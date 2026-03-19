@@ -150,6 +150,8 @@ pub fn step(
         }
 
         Behaviour::DoorOpen => {
+            elevator_driver.motor_direction(Direction::Stop.into());
+
             let current_floor = local_elevator_state.get_floor();
 
             if current_floor.is_none() {
