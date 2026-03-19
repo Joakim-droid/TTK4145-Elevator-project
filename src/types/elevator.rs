@@ -63,6 +63,11 @@ impl ElevatorState {
             self.floor = Some(floor);
             self.bump_seq();
         }
+
+        if (floor as usize) >= NUM_FLOORS || (floor as usize) <= 0 {
+            eprintln!("Invalid floor: {}", floor);
+            self.stop();
+        }
     }
 
     pub fn get_floor(&self) -> Option<u8> {

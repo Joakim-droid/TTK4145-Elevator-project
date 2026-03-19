@@ -38,8 +38,8 @@ pub fn step(
         return;
     }
 
-    if local_elevator_state.get_behavior() == Behaviour::Moving && is_floor {
-        if let Some(goal) = goal {
+    if local_elevator_state.get_behavior() == Behaviour::Moving && !is_floor {
+        if let Some(_goal) = goal {
             let current_direction = local_elevator_state.get_direction();
 
             elevator_driver.motor_direction(current_direction.into());
