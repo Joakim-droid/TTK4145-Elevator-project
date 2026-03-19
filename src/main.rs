@@ -243,11 +243,15 @@ fn main() {
                                 event_tx.clone(),
                                 false
                             );
+        
                         } else {
-                            // Ensure door is open and timer restarted if we become unobstructed while the door is still open
-                            if let Some(new_id) = my_state.open_door() {
-                                elevator_driver.door_light(true);
-                                fsm::spawn_door_timer(new_id, event_tx.clone());
+                            let hardware_floor = elevator_driver.floor_sensor();
+                            if hardware_floor.is_some(){
+                                // Ensure door is open and timer restarted if we become unobstructed while the door is still open
+                                if let Some(new_id) = my_state.open_door() {
+                                    elevator_driver.door_light(true);
+                                    fsm::spawn_door_timer(new_id, event_tx.clone());
+                                }
                             }
                     }
                     },
