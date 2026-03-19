@@ -30,6 +30,23 @@ pub fn step(
 ) {
     let local_elevator_state = system_state.get_my_state();
 
+    let is_floor = elevator_driver.floor_sensor().is_some();
+
+    if local_elevator_state.is_emergency_stop() {
+        elevator_driver.motor_direction(Direction::Stop.into());
+        local_elevator_state.stop();
+        return;
+    }
+
+    if local_elevator_state.get_behavior() == Behaviour::Moving && is_floor {
+        if let Some(goal) = goal {
+            let current_direction = local_elevator_state.get_direction();
+
+            elevator_driver.motor_direction(current_direction.into());
+        }
+        return;
+    }
+
     if local_elevator_state.is_obstructed() {
         if local_elevator_state.get_behavior() == Behaviour::Moving {
             elevator_driver.motor_direction(Direction::Stop.into());
@@ -44,12 +61,6 @@ pub fn step(
     }
 
     if goal.is_none() {
-        elevator_driver.motor_direction(Direction::Stop.into());
-        local_elevator_state.stop();
-        return;
-    }
-
-    if local_elevator_state.is_emergency_stop() {
         elevator_driver.motor_direction(Direction::Stop.into());
         local_elevator_state.stop();
         return;
