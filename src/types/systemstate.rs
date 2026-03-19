@@ -103,6 +103,13 @@ impl SystemState {
             return;
         }
 
+        let local_state = self.get_my_state();
+        
+        if local_state.is_emergency_stop() {
+            eprintln!("Cannot add order while in emergency stop");
+            return;
+        }
+
         match order {
             OrderType::Cab => {
                 let local_state = self.get_my_state();
