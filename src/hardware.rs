@@ -10,6 +10,7 @@ use std::{
 
 pub fn initialize_elevator_position(elevator: &Elevator, system_state: &mut SystemState) {
     elevator.door_light(false);
+    elevator.stop_button_light(false);
     if let Some(floor) = elevator.floor_sensor() {
         elevator.motor_direction(Direction::Stop.into());
         elevator.floor_indicator(floor);
