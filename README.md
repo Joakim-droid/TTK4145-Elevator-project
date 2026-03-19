@@ -1,6 +1,6 @@
 # TTK4145 Elevator Project
 
-An distributed elevator control system developed for the course *TTK4145 - Real-time Programming* at NTNU. The project coordinates multiple elevator nodes over the network, assigns hall calls across peers, and keeps the system operational when nodes disconnect or restart.
+A distributed elevator control system developed for the course *TTK4145 - Real-time Programming* at NTNU. The project coordinates multiple elevator nodes over the network, assigns hall calls across peers, and keeps the system operational when nodes disconnect or restart.
 
 ## Overview
 
