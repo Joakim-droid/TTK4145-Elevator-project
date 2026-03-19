@@ -132,12 +132,12 @@ pub fn spawn_stop_button_poller(elevator: &Elevator, channel_sender: Sender<Even
     let elevator_handler = elevator.clone();
 
     thread::spawn(move || {
-        let mut prev_val: Option<bool> = None;
+        let mut prev_val: bool = false;
 
         loop {
             let is_stop_pressed = elevator_handler.stop_button();
 
-            if prev_val == Some(is_stop_pressed) {
+            if prev_val == is_stop_pressed {
                 sleep(Duration::from_millis(20));
                 continue;
             }
@@ -147,7 +147,7 @@ pub fn spawn_stop_button_poller(elevator: &Elevator, channel_sender: Sender<Even
             {
                 break;
             }
-            prev_val = Some(is_stop_pressed);
+            prev_val = is_stop_pressed;
             sleep(Duration::from_millis(20));
         }
     });
