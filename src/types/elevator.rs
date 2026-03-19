@@ -63,7 +63,7 @@ impl ElevatorState {
             self.floor = Some(floor);
             self.bump_seq();
         }
-
+        // TODO: Sjekker samme som over
         if (floor as usize) >= NUM_FLOORS - 1 || (floor as usize) <= 0 {
             eprintln!("Invalid floor: {}", floor);
             self.stop();
@@ -163,9 +163,9 @@ impl ElevatorState {
 
     pub fn recover_from_backup(&mut self, backup: &ElevatorState) -> bool {
         let mut changed = false;
-        for f in 0..crate::config::NUM_FLOORS {
-            if backup.cab_requests[f] && !self.cab_requests[f] {
-                self.cab_requests[f] = true;
+        for floor in 0..NUM_FLOORS {
+            if backup.cab_requests[floor] && !self.cab_requests[floor] {
+                self.cab_requests[floor] = true;
                 changed = true;
             }
         }

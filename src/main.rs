@@ -235,13 +235,21 @@ fn main() {
                         let my_state = system_state.get_my_state();
                         my_state.set_obstruction(obstructed);
 
-                        fsm::step(
-                            &elevator_driver,
-                            &mut system_state,
-                            None,
-                            event_tx.clone(),
-                            false
-                        );
+                        if obstructed {
+                            fsm::step(
+                                &elevator_driver,
+                                &mut system_state,
+                                None,
+                                event_tx.clone(),
+                                false
+                            );
+                        } else {
+                            // Ensure door is open and timer restarted if we become unobstructed while the door is still open
+                            if let Some(new_id) = my_state.open_door() {
+                                elevator_driver.door_light(true);
+                                fsm::spawn_door_timer(new_id, event_tx.clone());
+                            }
+                    }
                     },
 
                     Ok(Event::EmergencyStop(is_stopped)) => {
