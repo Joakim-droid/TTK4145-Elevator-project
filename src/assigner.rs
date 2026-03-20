@@ -1,12 +1,29 @@
 //! Integrates with the external hall request assigner and picks the local elevator's next goal.
 
 use crate::logger::{self, LogEvent};
+use crate::types::direction::Direction;
 use crate::types::systemstate::SystemState;
 use std::collections::HashMap;
 use std::process::Command;
 
+type AssignedOrders = Vec<Vec<bool>>;
 
 pub fn decide_next_order(system_state: &SystemState) -> Option<u8> {
+    let my_id = system_state.get_my_id();
+    let local_state = system_state.get_elevator_state(&my_id)?;
+    let assigned_orders = get_assigned_orders(system_state)?;
+
+    let goal = choose_next_floor(
+        local_state.get_floor(),
+        local_state.get_direction(),
+        &assigned_orders,
+    );
+
+    logger::log(LogEvent::AssignerDecision { goal });
+    goal
+}
+
+fn get_assigned_orders(system_state: &SystemState) -> Option<AssignedOrders> {
 
     let mut system_state_clone = system_state.clone();
 
@@ -63,21 +80,66 @@ pub fn decide_next_order(system_state: &SystemState) -> Option<u8> {
         .expect("Failed to deserialize");
 
         let my_id = system_state_clone.get_my_id();
-        if let Some(my_orders) = hall_request_assigner_output_value.get(&my_id) {
-            for (floor, orders) in my_orders.iter().enumerate() {
-                if orders.iter().any(|&active| active) {
-                    let goal = Some(floor as u8);
-                    logger::log(LogEvent::AssignerDecision { goal });
-                    return goal;
-                }
-            }
-        }
-
-        logger::log(LogEvent::AssignerDecision { goal: None });
-        None
+        hall_request_assigner_output_value.get(&my_id).cloned()
     } else {
         let error_msg = String::from_utf8_lossy(&program_out.stderr);
         eprintln!("Error executing hall_request_assigner: {}", error_msg);
         None
+    }
+}
+
+fn choose_next_floor(
+    current_floor: Option<u8>,
+    direction: Direction,
+    assigned_orders: &[Vec<bool>],
+) -> Option<u8> {
+    let has_order_at = |floor: usize| -> bool {
+        assigned_orders
+            .get(floor)
+            .map(|orders| orders.iter().any(|&active| active))
+            .unwrap_or(false)
+    };
+
+    let active_floors: Vec<u8> = assigned_orders
+        .iter()
+        .enumerate()
+        .filter_map(|(floor, orders)| {
+            if orders.iter().any(|&active| active) {
+                Some(floor as u8)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if active_floors.is_empty() {
+        return None;
+    }
+
+    let Some(current) = current_floor else {
+        return active_floors.into_iter().next();
+    };
+
+    if has_order_at(current as usize) {
+        return Some(current);
+    }
+
+    let nearest_above = active_floors
+        .iter()
+        .copied()
+        .filter(|&floor| floor > current)
+        .min();
+    let nearest_below = active_floors
+        .iter()
+        .copied()
+        .filter(|&floor| floor < current)
+        .max();
+
+    match direction {
+        Direction::Up => nearest_above.or(nearest_below),
+        Direction::Down => nearest_below.or(nearest_above),
+        Direction::Stop => active_floors
+            .into_iter()
+            .min_by_key(|&floor| (floor.abs_diff(current), floor)),
     }
 }
