@@ -1,7 +1,9 @@
 //! Finite-state machine for elevator motion, door handling, and order servicing decisions.
 
+use crate::logger;
 use crate::{
     config::DOOR_OPEN_DURATION,
+    logger::LogEvent,
     types::{direction::Direction, elevator::Behaviour, event::Event, systemstate::SystemState},
 };
 use crossbeam_channel::Sender;
@@ -90,18 +92,23 @@ pub fn step(
             if should_serve_here && is_floor
                 && let Some(timer_id) = local_elevator_state.open_door()
             {
-                println!("[EVENT] door_opened floor={}", current_floor);
+                logger::log(LogEvent::DoorOpened {
+                    floor: current_floor,
+                });
                 elevator_driver.door_light(true);
                 spawn_door_timer(timer_id, event_tx.clone());
                 system_state.clear_order(current_floor);
-                println!("[EVENT] order_cleared floor={}", current_floor);
+                logger::log(LogEvent::OrderCleared {
+                    floor: current_floor,
+                });
             } else {
                 let direction = find_direction(current_floor, goal_floor);
 
-                println!(
-                    "[EVENT] motor_start floor={} direction={:?} goal={}",
-                    current_floor, direction, goal_floor
-                );
+                logger::log(LogEvent::MotorStart {
+                    floor: current_floor,
+                    direction,
+                    goal: goal_floor,
+                });
                 elevator_driver.motor_direction(direction.into());
                 local_elevator_state.set_direction(direction);
             }
@@ -131,22 +138,25 @@ pub fn step(
             if should_serve_here
                 && let Some(timer_id) = local_elevator_state.open_door()
             {
-                println!("[EVENT] door_opened floor={}", current_floor);
+                logger::log(LogEvent::DoorOpened {
+                    floor: current_floor,
+                });
                 elevator_driver.motor_direction(Direction::Stop.into());
                 elevator_driver.door_light(true);
                 spawn_door_timer(timer_id, event_tx.clone());
                 system_state.clear_order(current_floor);
-                println!("[EVENT] order_cleared floor={}", current_floor);
+                logger::log(LogEvent::OrderCleared {
+                    floor: current_floor,
+                });
             } else {
                 let desired_direction = find_direction(current_floor, goal);
                 if desired_direction != local_elevator_state.get_direction() {
-                    println!(
-                        "[EVENT] motor_reverse floor={} from={:?} to={:?} goal={}",
-                        current_floor,
-                        local_elevator_state.get_direction(),
-                        desired_direction,
-                        goal
-                    );
+                    logger::log(LogEvent::MotorReverse {
+                        floor: current_floor,
+                        from: local_elevator_state.get_direction(),
+                        to: desired_direction,
+                        goal,
+                    });
                     elevator_driver.motor_direction(desired_direction.into());
                     local_elevator_state.set_direction(desired_direction);
                 }

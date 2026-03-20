@@ -1,5 +1,6 @@
 //! Hardware integration helpers for startup homing and polling simulator inputs into events.
 
+use crate::logger::{self, LogEvent};
 use crate::types::{
     direction::Direction, event::Event, orders::OrderType, systemstate::SystemState,
 };
@@ -24,6 +25,7 @@ pub fn initialize_elevator_position(elevator: &Elevator, system_state: &mut Syst
 
     elevator.motor_direction(Direction::Down.into());
 
+    let mut stuck_counter = 0; // Counter for logging homing status if it takes too long.
     loop {
         if let Some(floor) = elevator.floor_sensor() {
             elevator.motor_direction(Direction::Stop.into());
@@ -34,6 +36,10 @@ pub fn initialize_elevator_position(elevator: &Elevator, system_state: &mut Syst
             return;
         }
         sleep(Duration::from_millis(20));
+        stuck_counter += 1;
+        if stuck_counter % 50 == 0 {
+            logger::log(LogEvent::Homing);
+        }
     }
 }
 
