@@ -187,13 +187,12 @@ pub fn step(
             // Only reset the timer if this step was triggered by a button press at
             // this floor. Peer state updates and other events must not reset the timer —
             // doing so causes timer spam that prevents the door from ever closing.
-            if triggered_by_button_press {
-                if let Some(timer_id) = local_elevator_state.open_door() {
+            if triggered_by_button_press
+                && let Some(timer_id) = local_elevator_state.open_door() {
                     elevator_driver.door_light(true);
                     spawn_door_timer(timer_id, event_tx.clone());
                     system_state.clear_order(current_floor);
                 }
-            }
         }
     }
 }

@@ -18,19 +18,11 @@ use crate::types::{direction::Direction, systemstate::SystemState};
 #[cfg(feature = "test-logging")]
 use std::io::Write;
 
-// ============================================================================
-// LogEvent Enum
-// ============================================================================
 
-/// Events that can be logged for test infrastructure and production diagnostics.
-///
-/// Always-on events (Startup, InitialState, PostSyncState) print unconditionally.
-/// Test-only events are no-ops when the `test-logging` feature is disabled.
-// #[allow(dead_code)] // Some variants only used with test-logging enabled
 pub enum LogEvent<'a> {
-    // ========================================================================
-    // ALWAYS-ON EVENTS (Production informational messages)
-    // ========================================================================
+
+    // ALWAYS-ON EVENTS
+
     /// Node startup with connection details
     Startup {
         node_id: &'a str,
@@ -44,18 +36,15 @@ pub enum LogEvent<'a> {
     /// System state after 2s peer sync window
     PostSyncState { state: &'a SystemState },
 
-    // ========================================================================
-    // TEST-ONLY EVENTS (No-ops without test-logging feature)
-    // ========================================================================
+
+    // TEST-ONLY EVENTS
+
     /// SystemState snapshot received from network merge
     SystemStateReceived { state: &'a SystemState },
 
     /// SystemState snapshot after local event processing
     SystemStateLocal { state: &'a SystemState },
 
-    // ========================================================================
-    // FSM EVENT MARKERS
-    // ========================================================================
     /// Elevator arrived at a floor (floor sensor triggered)
     FloorReached { floor: u8 },
 
@@ -80,9 +69,6 @@ pub enum LogEvent<'a> {
         goal: u8,
     },
 
-    // ========================================================================
-    // DIAGNOSTIC EVENTS
-    // ========================================================================
     /// Stale door timer event ignored (timer ID mismatch)
     StaleTimer { timer_id: u64 },
 
@@ -92,18 +78,12 @@ pub enum LogEvent<'a> {
     /// Homing progress (still searching for initial floor sensor)
     Homing,
 
-    // ========================================================================
-    // NETWORK INFRASTRUCTURE
-    // ========================================================================
     /// State broadcast thread started on given port
     StateBroadcastSpawned { port: u16 },
 
     /// Peer discovery thread started on given port
     PeerDiscoverySpawned { port: u16 },
 
-    // ========================================================================
-    // ASSIGNER DEBUG OUTPUT
-    // ========================================================================
     /// JSON input sent to hall_request_assigner binary
     AssignerInput { json: &'a str },
 
@@ -111,17 +91,11 @@ pub enum LogEvent<'a> {
     AssignerDecision { goal: Option<u8> },
 }
 
-// ============================================================================
-// Single Log Function
-// ============================================================================
 
 /// Log an event. Always-on events print unconditionally; test-only events
 /// are compiled out when the `test-logging` feature is disabled.
 pub fn log(event: LogEvent) {
     match event {
-        // ====================================================================
-        // ALWAYS-ON LOGS (Production)
-        // ====================================================================
         LogEvent::Startup {
             node_id,
             sim_port,
@@ -143,9 +117,6 @@ pub fn log(event: LogEvent) {
             println!("{}", state);
         }
 
-        // ====================================================================
-        // TEST-ONLY LOGS (No-ops without test-logging feature)
-        // ====================================================================
         #[cfg(feature = "test-logging")]
         LogEvent::SystemStateReceived { state } => {
             println!("Received state from network");
@@ -164,9 +135,7 @@ pub fn log(event: LogEvent) {
         #[cfg(not(feature = "test-logging"))]
         LogEvent::SystemStateLocal { .. } => {}
 
-        // ====================================================================
-        // FSM EVENT MARKERS
-        // ====================================================================
+
         #[cfg(feature = "test-logging")]
         LogEvent::FloorReached { floor } => {
             println!("[EVENT] floor_reached floor={}", floor);
@@ -217,9 +186,7 @@ pub fn log(event: LogEvent) {
         #[cfg(not(feature = "test-logging"))]
         LogEvent::MotorReverse { .. } => {}
 
-        // ====================================================================
-        // DIAGNOSTIC EVENTS
-        // ====================================================================
+
         #[cfg(feature = "test-logging")]
         LogEvent::StaleTimer { timer_id } => {
             println!("Ignored stale timer event (ID: {})", timer_id);
@@ -241,9 +208,6 @@ pub fn log(event: LogEvent) {
         #[cfg(not(feature = "test-logging"))]
         LogEvent::Homing => {}
 
-        // ====================================================================
-        // NETWORK INFRASTRUCTURE
-        // ====================================================================
         #[cfg(feature = "test-logging")]
         LogEvent::StateBroadcastSpawned { port } => {
             println!("State broadcast spawned on port {}", port);
@@ -258,9 +222,6 @@ pub fn log(event: LogEvent) {
         #[cfg(not(feature = "test-logging"))]
         LogEvent::PeerDiscoverySpawned { .. } => {}
 
-        // ====================================================================
-        // ASSIGNER DEBUG
-        // ====================================================================
         #[cfg(feature = "test-logging")]
         LogEvent::AssignerInput { json } => {
             println!(
