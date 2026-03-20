@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = []
 test-logging = []  # Enable verbose test logging
+default = ["test-logging"]
 
 [dependencies]
 crossbeam-channel = "0.5.15"

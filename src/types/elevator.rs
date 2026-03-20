@@ -66,7 +66,6 @@ impl ElevatorState {
             self.bump_seq();
         }
         if (floor as usize) >= NUM_FLOORS - 1 || (floor as usize) <= 0 {
-            eprintln!("Invalid floor: {}", floor);
             self.stop();
         }
     }

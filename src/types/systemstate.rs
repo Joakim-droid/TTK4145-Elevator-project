@@ -174,8 +174,8 @@ impl SystemState {
         }
         let direction = my_state.get_direction();
         match dir {
-            0 => direction == Direction::Up || direction == Direction::Stop,
-            1 => direction == Direction::Down || direction == Direction::Stop,
+            HALLUP => direction == Direction::Up || direction == Direction::Stop,
+            HALLDOWN => direction == Direction::Down || direction == Direction::Stop,
             _ => false,
         }
     }
