@@ -55,7 +55,7 @@ pub fn execute_state_transition(
         return;
     }
 
-    if local_elevator_state.is_obstructed() && is_floor{
+    if local_elevator_state.is_obstructed() && is_floor {
         if local_elevator_state.get_behavior() == Behaviour::Moving {
             elevator_driver.motor_direction(Direction::Stop.into());
             local_elevator_state.stop();
@@ -86,9 +86,11 @@ pub fn execute_state_transition(
             let current_floor = current_floor.unwrap();
             let goal_floor = goal.unwrap();
 
-            let should_serve_here = current_floor == goal_floor || local_elevator_state.get_cab_request(current_floor);
+            let should_serve_here =
+                current_floor == goal_floor || local_elevator_state.get_cab_request(current_floor);
 
-            if should_serve_here && is_floor
+            if should_serve_here
+                && is_floor
                 && let Some(timer_id) = local_elevator_state.open_door()
             {
                 logger::log(LogEvent::DoorOpened {
@@ -133,9 +135,7 @@ pub fn execute_state_transition(
             let should_serve_here =
                 current_floor == goal || local_elevator_state.get_cab_request(current_floor);
 
-            if should_serve_here
-                && let Some(timer_id) = local_elevator_state.open_door()
-            {
+            if should_serve_here && let Some(timer_id) = local_elevator_state.open_door() {
                 logger::log(LogEvent::DoorOpened {
                     floor: current_floor,
                 });
@@ -185,14 +185,11 @@ pub fn execute_state_transition(
                 return;
             }
 
-            if triggered_by_button_press {
-                if let Some(timer_id) = local_elevator_state.open_door() {
-                    elevator_driver.door_light(true);
-                    spawn_door_timer(timer_id, event_tx.clone());
-                    system_state.clear_order(current_floor);
-                }
+            if triggered_by_button_press && let Some(timer_id) = local_elevator_state.open_door() {
+                elevator_driver.door_light(true);
+                spawn_door_timer(timer_id, event_tx.clone());
+                system_state.clear_order(current_floor);
             }
         }
     }
 }
-
