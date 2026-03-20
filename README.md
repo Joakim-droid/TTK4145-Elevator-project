@@ -3,8 +3,7 @@
 A distributed elevator control system developed for the course *TTK4145 - Real-time Programming* at NTNU. The project coordinates multiple elevator nodes over the network, assigns hall calls across peers, and keeps the system operational when nodes disconnect or restart.
 
 ## Overview
-
-The system is built as a set of Rust modules around a shared `SystemState`. 
+The system is built as a set of Rust modules around a shared `SystemState`.
 
 Each node polls the simulator hardware for button presses, floor arrivals, obstruction, and stop signals. It then exchanges state with peers over UDP and runs order assignment based on the agreed state. Then it executes movement and door actions through a finite state machine and shares its updated state with the other nodes.
 
