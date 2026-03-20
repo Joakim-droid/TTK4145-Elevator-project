@@ -38,7 +38,7 @@ fn main() {
 
     logger::log(LogEvent::Startup {
         node_id: &my_id,
-        sim_port,
+        elevatorserver_port,
         broadcast_port,
     });
 
@@ -57,7 +57,7 @@ fn main() {
     spawn_button_poller(&elevator_driver, event_tx.clone());
     spawn_obstruction_poller(&elevator_driver, event_tx.clone());
     spawn_stop_button_poller(&elevator_driver, event_tx.clone());
-    spawn_peer_discovery(my_id.clone(), event_tx.clone(), PEER_DISCOVERY_BCAST_PORT);
+    spawn_peer_discovery(my_id.clone(), event_tx.clone(), PEER_DISCOVERY_BROADCAST_PORT);
     spawn_state_broadcast(
         my_id.clone(),
         broadcast_port,
@@ -115,7 +115,7 @@ fn main() {
                         };
 
                         if !between_floors {
-                            fsm::step(
+                            fsm::execute_state_transition(
                                 &elevator_driver,
                                 &mut system_state,
                                 current_goal,
@@ -141,7 +141,7 @@ fn main() {
                         // Use the cached goal so the FSM opens the door upon arrival
                         // even if the assigner transiently reassigns this order to
                         // another elevator at the exact moment we reach the floor.
-                        fsm::step(
+                        fsm::execute_state_transition(
                             &elevator_driver,
                             &mut system_state,
                             current_goal,
@@ -169,7 +169,7 @@ fn main() {
 
                         current_goal = assigner::decide_next_order(&system_state);
 
-                        fsm::step(
+                        fsm::execute_state_transition(
                             &elevator_driver,
                             &mut system_state,
                             current_goal,
@@ -190,7 +190,7 @@ fn main() {
 
                         current_goal = assigner::decide_next_order(&system_state);
 
-                        fsm::step(
+                        fsm::execute_state_transition(
                             &elevator_driver,
                             &mut system_state,
                             current_goal,
@@ -216,7 +216,7 @@ fn main() {
 
                             current_goal = assigner::decide_next_order(&system_state);
                             
-                            fsm::step(
+                            fsm::execute_state_transition(
                                 &elevator_driver,
                                 &mut system_state,
                                 current_goal,
@@ -234,7 +234,7 @@ fn main() {
                         my_state.set_obstruction(obstructed);
 
                         if obstructed {
-                            fsm::step(
+                            fsm::execute_state_transition(
                                 &elevator_driver,
                                 &mut system_state,
                                 None,
@@ -260,7 +260,7 @@ fn main() {
                         elevator_driver.stop_button_light(is_stopped);
 
                         if is_stopped {
-                            fsm::step(
+                            fsm::execute_state_transition(
                                 &elevator_driver,
                                 &mut system_state,
                                 None,
@@ -269,7 +269,7 @@ fn main() {
                             );
                         } else {
                             current_goal = assigner::decide_next_order(&system_state);
-                            fsm::step(
+                            fsm::execute_state_transition(
                                 &elevator_driver,
                                 &mut system_state,
                                 current_goal,

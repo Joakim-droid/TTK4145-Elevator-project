@@ -2,16 +2,7 @@
 //!
 //! This module provides structured logging for the test infrastructure using
 //! a single `LogEvent` enum with feature-based behavior.
-//!
-//! When `test-logging` is disabled (default), test-only events are no-ops with
-//! zero runtime overhead. Always-on events (startup, initial state) print
-//! unconditionally.
-//!
-//! Error messages (eprintln!) remain at call sites and are never gated.
-//!
-//! Enable test logging via:
-//!   cargo build --features test-logging
-//!
+
 
 use crate::types::{direction::Direction, systemstate::SystemState};
 
@@ -34,8 +25,8 @@ pub enum LogEvent<'a> {
     /// Node startup with connection details
     Startup {
         node_id: &'a str,
-        sim_port: u16,
-        bcast_port: u16,
+        elevatorserver_port: u16,
+        broadcast_port: u16,
     },
 
     /// Initial system state after initialization
@@ -124,12 +115,12 @@ pub fn log(event: LogEvent) {
         // ====================================================================
         LogEvent::Startup {
             node_id,
-            sim_port,
-            bcast_port,
+            elevatorserver_port,
+            broadcast_port,
         } => {
             println!(
-                "Starting elevator node '{}' on simulator port {} with broadcast port {}",
-                node_id, sim_port, bcast_port
+                "Starting elevator node '{}' on elevator server port {} with broadcast port {}",
+                node_id, elevatorserver_port, broadcast_port
             );
         }
 

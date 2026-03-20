@@ -5,8 +5,9 @@ use crate::types::systemstate::SystemState;
 use std::collections::HashMap;
 use std::process::Command;
 
+//
 pub fn decide_next_order(system_state: &SystemState) -> Option<u8> {
-    // Serialize data
+
     let mut system_state_clone = system_state.clone();
 
     let dead_peers = system_state.get_dead_elevators().clone();
@@ -15,12 +16,11 @@ pub fn decide_next_order(system_state: &SystemState) -> Option<u8> {
     }
 
     // Remove peers that cannot serve orders: obstructed or in emergency stop.
-    // We keep our own entry so the assigner always produces output for my_id.
     let my_id = system_state_clone.get_my_id();
     let unavailable_peers: Vec<String> = system_state_clone
         .get_elevator_ids()
         .into_iter()
-        .filter(|id| *id != my_id)
+        .filter(|id| *id != my_id) 
         .filter(|id| {
             system_state_clone
                 .get_elevator_state(id)
@@ -46,6 +46,7 @@ pub fn decide_next_order(system_state: &SystemState) -> Option<u8> {
         json: &hall_request_assigner_json,
     });
 
+    // Calling the external assigner program.
     let program_out = Command::new("./execs/hall_request_assigner")
         .arg("-i")
         .arg(&hall_request_assigner_json)

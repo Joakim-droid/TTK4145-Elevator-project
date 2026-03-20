@@ -28,7 +28,7 @@ pub struct ElevatorState {
     boot_id: u64,
     seq: u64,
 }
-
+// Generate a boot_id based on the current time and process ID. This should be unique across reboots and different processes.
 fn new_boot_id() -> u64 {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -65,7 +65,6 @@ impl ElevatorState {
             self.floor = Some(floor);
             self.bump_seq();
         }
-        // TODO: Sjekker samme som over
         if (floor as usize) >= NUM_FLOORS - 1 || (floor as usize) <= 0 {
             eprintln!("Invalid floor: {}", floor);
             self.stop();
@@ -101,7 +100,7 @@ impl ElevatorState {
 
         self.behaviour = Behaviour::DoorOpen;
 
-        self.door_open_counter = self.door_open_counter.saturating_add(1); // TODO: Legg til hjelpefunksjon for ryddighet
+        self.door_open_counter = self.door_open_counter.saturating_add(1);
         self.bump_seq();
         Some(self.door_open_counter)
     }

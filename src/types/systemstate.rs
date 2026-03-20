@@ -8,10 +8,13 @@ use driver_rust::elevio::elev::Elevator;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
+const HALLUP: usize = 0;
+const HALLDOWN: usize = 1;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SystemState {
     my_id: String,
-    #[serde(rename = "states")] // for hall_request_assigner
+    #[serde(rename = "states")]
     elevators: HashMap<String, ElevatorState>,
     #[serde(rename = "hallRequests")]
     hall_requests: [[bool; 2]; NUM_FLOORS],
@@ -44,7 +47,6 @@ impl SystemState {
     pub fn get_my_state(&mut self) -> &mut ElevatorState {
         self.elevators
             .entry(self.my_id.clone())
-            // TODO Maybe exit program if not found instead of inserting default state
             .or_default()
     }
 
@@ -74,20 +76,18 @@ impl SystemState {
         self.elevators.remove(id);
     }
 
-    /// Returns all elevator IDs currently tracked (including self).
     pub fn get_elevator_ids(&self) -> Vec<String> {
         self.elevators.keys().cloned().collect()
     }
 
-    /// Returns an immutable reference to a specific elevator's state, if present.
     pub fn get_elevator_state(&self, id: &str) -> Option<&ElevatorState> {
         self.elevators.get(id)
     }
 
     fn set_hall_order(&mut self, arrive: bool, floor: u8, order: OrderType) {
         match order {
-            OrderType::HallUp => self.hall_requests[floor as usize][0] = arrive,
-            OrderType::HallDown => self.hall_requests[floor as usize][1] = arrive,
+            OrderType::HallUp => self.hall_requests[floor as usize][HALLUP] = arrive,
+            OrderType::HallDown => self.hall_requests[floor as usize][HALLDOWN] = arrive,
             OrderType::Cab => {
                 eprintln!("Should not be called with Cab order")
             }
@@ -118,13 +118,13 @@ impl SystemState {
                 local_state.add_cab_request(floor);
             }
             OrderType::HallUp => {
-                if !self.hall_requests[floor as usize][0] {
+                if !self.hall_requests[floor as usize][HALLUP] {
                     self.bump_hall_epoch(floor as usize, order);
                     self.set_hall_order(true, floor, order);
                 }
             }
             OrderType::HallDown => {
-                if !self.hall_requests[floor as usize][1] {
+                if !self.hall_requests[floor as usize][HALLDOWN] {
                     self.bump_hall_epoch(floor as usize, order);
                     self.set_hall_order(true, floor, order);
                 }
@@ -135,10 +135,10 @@ impl SystemState {
     fn bump_hall_epoch(&mut self, floor: usize, order: OrderType) {
         match order {
             OrderType::HallUp => {
-                self.hall_epoch[floor][0] = self.hall_epoch[floor][0].saturating_add(1);
+                self.hall_epoch[floor][HALLUP] = self.hall_epoch[floor][HALLUP].saturating_add(1);
             }
             OrderType::HallDown => {
-                self.hall_epoch[floor][1] = self.hall_epoch[floor][1].saturating_add(1);
+                self.hall_epoch[floor][HALLDOWN] = self.hall_epoch[floor][HALLDOWN].saturating_add(1);
             }
             OrderType::Cab => {
                 eprintln!("Error: Cannot bump hall epoch for a Cab order");
@@ -147,15 +147,13 @@ impl SystemState {
     }
 
     fn bump_hall_epoch_clear(&mut self, floor: usize, order: OrderType) {
-        // Bump by 2 on clear so the clear epoch always strictly dominates any
-        // peer that only saw the placement (+1). This prevents the equal-epoch
-        // tie-break in merge_with from restoring a legitimately cleared order.
+        // Bump by 2 on clear to prevent ties 
         match order {
             OrderType::HallUp => {
-                self.hall_epoch[floor][0] = self.hall_epoch[floor][0].saturating_add(2);
+                self.hall_epoch[floor][HALLUP] = self.hall_epoch[floor][HALLUP].saturating_add(2);
             }
             OrderType::HallDown => {
-                self.hall_epoch[floor][1] = self.hall_epoch[floor][1].saturating_add(2);
+                self.hall_epoch[floor][HALLDOWN] = self.hall_epoch[floor][HALLDOWN].saturating_add(2);
             }
             OrderType::Cab => {
                 eprintln!("Error: Cannot bump hall epoch for a Cab order");
@@ -164,7 +162,6 @@ impl SystemState {
     }
 
     fn can_clear_order(&self, floor: usize, dir: usize) -> bool {
-        // Checks based on elevators own state, if it can clear the order
         let Some(my_state) = self.elevators.get(&self.my_id) else {
             eprintln!("Current elevator not in state");
             return false;
@@ -189,7 +186,6 @@ impl SystemState {
             return;
         }
 
-        // Scope the borrow to drop local_state before mutating self
         let direction = {
             let local_state = self.get_my_state();
             local_state.clear_cab_request(floor);
@@ -201,23 +197,19 @@ impl SystemState {
 
         match direction {
             Direction::Up => {
-                // Travelling up: only board passengers going up
-                if self.hall_requests[floor as usize][0] {
+                if self.hall_requests[floor as usize][HALLUP] {
                     clear_up = true;
                 }
             }
             Direction::Down => {
-                // Travelling down: only board passengers going down
-                if self.hall_requests[floor as usize][1] {
+                if self.hall_requests[floor as usize][HALLDOWN] {
                     clear_down = true;
                 }
             }
             Direction::Stop => {
-                // No announced direction of travel: serve one direction per door-open.
-                // Prefer HallUp; the remaining HallDown will be served on the next cycle.
-                if self.hall_requests[floor as usize][0] {
+                if self.hall_requests[floor as usize][HALLUP] {
                     clear_up = true;
-                } else if self.hall_requests[floor as usize][1] {
+                } else if self.hall_requests[floor as usize][HALLDOWN] {
                     clear_down = true;
                 }
             }
@@ -238,13 +230,13 @@ impl SystemState {
             driver.call_button_light(
                 floor as u8,
                 OrderType::HallUp.into(),
-                self.hall_requests[floor][0],
+                self.hall_requests[floor][HALLUP],
             );
 
             driver.call_button_light(
                 floor as u8,
                 OrderType::HallDown.into(),
-                self.hall_requests[floor][1],
+                self.hall_requests[floor][HALLDOWN],
             );
         }
 
@@ -260,18 +252,12 @@ impl SystemState {
 
     pub fn merge_with(&mut self, other: &SystemState) -> bool {
         let mut changed = false;
-        // Merge elevator states by sequence number.
         for (id, other_state) in &other.elevators {
             if self.dead_elevators.contains(id) && id != &self.my_id {
                 continue;
             }
 
             if id == &self.my_id {
-                // Only restore cab orders from peer backup during the startup sync window.
-                // Once sync_complete is true, this elevator's own cab state is authoritative
-                // and must never be overwritten by a stale peer copy. Applying
-                // recover_from_backup in the main loop causes double door-opens: a peer
-                // carrying a pre-clear cab request restores it after the elevator served it.
                 if !self.sync_complete {
                     changed |= self.get_my_state().recover_from_backup(other_state);
                 }
@@ -293,8 +279,7 @@ impl SystemState {
         }
 
         /*
-        Merge hall requests for given floor and direction by epoch.
-        Go through each cell and take the one with higher epoch. If conflicting, we have to manage it.
+        Merge hall requests for given floor and direction by epoch. If conflicting, we have to manage it.
          */
         for floor in 0..NUM_FLOORS {
             for dir in 0..2 {
@@ -320,16 +305,15 @@ impl SystemState {
                 let request_other = other.hall_requests[floor][dir];
 
                 if request_self == request_other {
-                    continue; // No conflict, same value
+                    continue; 
                 }
 
-                // Equal epoch: check can_clear
                 let self_clear = !request_self && self.can_clear_order(floor, dir);
                 let other_clear = !request_other && other.can_clear_order(floor, dir);
 
                 if self_clear || other_clear {
                     if self.hall_requests[floor][dir] {
-                        self.hall_requests[floor][dir] = false; // Clear the order
+                        self.hall_requests[floor][dir] = false;
                         changed = true;
                     }
                 } else {
@@ -344,7 +328,6 @@ impl SystemState {
     }
 }
 
-// Implementation for pretty printing the elevator state to terminal
 impl fmt::Display for SystemState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let now = std::time::SystemTime::now()
@@ -364,10 +347,10 @@ impl fmt::Display for SystemState {
                 f,
                 "  Floor {:2}: up={} (e={}), down={} (e={})",
                 floor,
-                self.hall_requests[floor][0],
-                self.hall_epoch[floor][0],
-                self.hall_requests[floor][1],
-                self.hall_epoch[floor][1]
+                self.hall_requests[floor][HALLUP],
+                self.hall_epoch[floor][HALLUP],
+                self.hall_requests[floor][HALLDOWN],
+                self.hall_epoch[floor][HALLDOWN]
             )?;
         }
         writeln!(f, "Elevators:")?;

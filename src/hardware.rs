@@ -68,7 +68,6 @@ pub fn spawn_button_poller(elevator: &Elevator, channel_sender: Sender<Event>) {
                         .send(Event::ButtonPressed(floor, call))
                         .is_err()
                     {
-                        // Close thread if channel is down
                         return;
                     }
                 }
@@ -93,7 +92,6 @@ pub fn spawn_floor_poller(elevator: &Elevator, channel_sender: Sender<Event>) {
                 {
                     let res = channel_sender.send(Event::FloorReached(floor));
                     if res.is_err() {
-                        // Close thread if channel is down
                         break;
                     }
                 }
@@ -106,7 +104,6 @@ pub fn spawn_floor_poller(elevator: &Elevator, channel_sender: Sender<Event>) {
     });
 }
 
-// Function to poll obstruction sensor and sending the corresponding event when it changes.
 pub fn spawn_obstruction_poller(elevator: &Elevator, channel_sender: Sender<Event>) {
     let elevator_handler = elevator.clone();
 

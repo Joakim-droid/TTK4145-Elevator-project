@@ -25,7 +25,7 @@ pub fn spawn_door_timer(timer_id: u64, event_tx: Sender<Event>) {
 }
 
 /// Executes the necessary actions to serve the goal
-pub fn step(
+pub fn execute_state_transition(
     elevator_driver: &Elevator,
     system_state: &mut SystemState,
     goal: Option<u8>,
@@ -79,7 +79,6 @@ pub fn step(
             let current_floor = local_elevator_state.get_floor();
 
             if current_floor.is_none() || goal.is_none() {
-                // TODO: Maybe handle this error
                 eprintln!("Elevator is stuck between floors");
                 return;
             }
@@ -124,7 +123,6 @@ pub fn step(
             let current_floor = current_floor.unwrap();
 
             if goal.is_none() {
-                // No orders to serve
                 local_elevator_state.stop();
                 elevator_driver.motor_direction(Direction::Stop.into());
                 return;
@@ -178,20 +176,15 @@ pub fn step(
             let current_floor = current_floor.unwrap();
 
             if goal.is_none() {
-                // No orders, waiting for door time out
                 return;
             }
 
             let goal_floor = goal.unwrap();
 
             if goal_floor != current_floor {
-                // New goal exist, but must wait for door timeout.
                 return;
             }
 
-            // Only reset the timer if this step was triggered by a button press at
-            // this floor. Peer state updates and other events must not reset the timer —
-            // doing so causes timer spam that prevents the door from ever closing.
             if triggered_by_button_press {
                 if let Some(timer_id) = local_elevator_state.open_door() {
                     elevator_driver.door_light(true);
