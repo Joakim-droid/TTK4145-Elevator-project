@@ -2,14 +2,14 @@
 //! Initializes hardware, networking, and shared state, then runs the main event loop.
 
 use crate::{
-    config::{NUM_FLOORS, PEER_DISCOVERY_BCAST_PORT},
+    config::{NUM_FLOORS, PEER_DISCOVERY_BROADCAST_PORT},
     hardware::{
         initialize_elevator_position, spawn_button_poller, spawn_floor_poller,
         spawn_obstruction_poller, spawn_stop_button_poller,
     },
     network::{spawn_peer_discovery, spawn_state_broadcast, startup_peer_sync},
     types::{
-        direction::Direction, elevator::Behaviour, event::Event, orders::OrderType,
+        elevator::Behaviour, event::Event, orders::OrderType,
         systemstate::SystemState,
     },
 };
@@ -32,16 +32,14 @@ fn main() {
         std::process::exit(1);
     }));
 
-    let (my_id, sim_port, bcast_port) = parser::parse();
-    let elevator_address = format!("localhost:{}", sim_port);
+    let (my_id, elevatorserver_port, broadcast_port) = parser::parse();
+    let elevator_address = format!("localhost:{}", elevatorserver_port);
 
     println!(
         "Starting elevator '{}' connecting to simulator on {} (broadcast_port={})",
-        my_id, elevator_address, bcast_port
+        my_id, elevator_address, broadcast_port
     );
-    // TODO: Used for debugging in test script, remove later
-    std::io::stdout().flush().unwrap();
-
+   
     let elevator_driver =
         Elevator::init(&elevator_address, NUM_FLOORS as u8).expect("Error connecting to Elevator");
     let mut system_state = SystemState::new(&my_id);
@@ -57,19 +55,11 @@ fn main() {
     spawn_button_poller(&elevator_driver, event_tx.clone());
     spawn_obstruction_poller(&elevator_driver, event_tx.clone());
     spawn_stop_button_poller(&elevator_driver, event_tx.clone());
-    spawn_peer_discovery(my_id.clone(), event_tx.clone(), PEER_DISCOVERY_BCAST_PORT);
-    spawn_state_broadcast(
-        my_id.clone(),
-        bcast_port,
-        state_to_broadcast_rx,
-        eager_broadcast_rx,
-        peer_state_tx,
-    );
-
+    spawn_peer_discovery(my_id.clone(), event_tx.clone(), PEER_DISCOVERY_BROADCAST_PORT);
+    spawn_state_broadcast(my_id.clone(), broadcast_port,state_to_broadcast_rx,eager_broadcast_rx, peer_state_tx);
+ 
     println!("Initial state:");
     println!("{system_state}");
-    // TODO: Used for debugging in test script, remove later
-    std::io::stdout().flush().unwrap();
 
     // Prime the broadcast ticker before the sync window so peers receive our
     // heartbeats and can send us their state (including our backed-up cab orders).
@@ -102,8 +92,7 @@ fn main() {
                     if system_state.merge_with(&fetched_state) {
                         println!("Received state from network");
                         println!("{system_state}");
-                        // TODO: Used for debugging in test script, remove later
-                        std::io::stdout().flush().unwrap();
+
                         current_goal = assigner::decide_next_order(&system_state);
 
                         // Do not command the FSM while moving between floors — the
@@ -138,12 +127,7 @@ fn main() {
                         println!("[EVENT] floor_reached floor={}", floor);
                         system_state.arrive_at_floor(floor);
                         elevator_driver.floor_indicator(floor);
-
-                        // FIXME: Move this elsewhere
-                        let my_state = system_state.get_my_state();
-                        if my_state.get_behavior() == Behaviour::Idle {
-                            elevator_driver.motor_direction(Direction::Stop.into());
-                        }
+                       
 
                         // Use the cached goal so the FSM opens the door upon arrival
                         // even if the assigner transiently reassigns this order to
@@ -196,6 +180,7 @@ fn main() {
                         }
 
                         current_goal = assigner::decide_next_order(&system_state);
+
                         fsm::step(
                             &elevator_driver,
                             &mut system_state,
@@ -221,6 +206,7 @@ fn main() {
                             my_state.close_door();
 
                             current_goal = assigner::decide_next_order(&system_state);
+                            
                             fsm::step(
                                 &elevator_driver,
                                 &mut system_state,
@@ -246,7 +232,6 @@ fn main() {
                                 event_tx.clone(),
                                 false
                             );
-        
                         } else {
                             let hardware_floor = elevator_driver.floor_sensor();
                             if hardware_floor.is_some(){
@@ -256,7 +241,7 @@ fn main() {
                                     fsm::spawn_door_timer(new_id, event_tx.clone());
                                 }
                             }
-                    }
+                        }
                     },
 
                     Ok(Event::EmergencyStop(is_stopped)) => {
@@ -288,8 +273,6 @@ fn main() {
                 system_state.update_lights(&elevator_driver);
                 println!("Local event handled");
                 println!("{system_state}");
-                // TODO: Used for debugging in test script, remove later
-                std::io::stdout().flush().unwrap();
                 state_to_broadcast_tx.send(system_state.clone()).unwrap();
             }
         }

@@ -2,7 +2,6 @@
 
 use crate::types::systemstate::SystemState;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::process::Command;
 
 pub fn decide_next_order(system_state: &SystemState) -> Option<u8> {
@@ -42,28 +41,7 @@ pub fn decide_next_order(system_state: &SystemState) -> Option<u8> {
     let hall_request_assigner_json =
         serde_json::to_string(&serialized_system_state).expect("Failed to serialize data");
 
-    let mut candidates: Vec<PathBuf> = vec![
-        PathBuf::from("./execs/hall_request_assigner"),
-        PathBuf::from("../execs/hall_request_assigner"),
-        PathBuf::from("../../execs/hall_request_assigner"),
-    ];
-
-    if let Ok(mut exe_path) = std::env::current_exe() {
-        loop {
-            let candidate = exe_path.join("execs").join("hall_request_assigner");
-            candidates.push(candidate);
-            if !exe_path.pop() {
-                break;
-            }
-        }
-    }
-
-    let hra_path = candidates
-        .into_iter()
-        .find(|p| p.exists())
-        .unwrap_or_else(|| PathBuf::from("./execs/hall_request_assigner"));
-
-    let program_out = Command::new(hra_path)
+    let program_out = Command::new("./execs/hall_request_assigner")
         .arg("-i")
         .arg(&hall_request_assigner_json)
         .arg("--includeCab")

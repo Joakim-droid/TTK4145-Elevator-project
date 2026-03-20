@@ -14,7 +14,7 @@ from log_verifier import run_verification
 # Configuration
 NODES = {"elev1": 15657, "elev2": 15658, "elev3": 15659}
 PEER_DISCOVERY_PORT = 16658
-BCAST_PORT = 16659
+broadcast_port = 16659
 # ROOT_DIR should point to the project root so `execs/` is found there.
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Keep the scenario config next to this test file.
@@ -101,7 +101,7 @@ def _format_summary_lines(results: list[dict]) -> list[str]:
 
     if TEST_OPTIONS["noise"]:
         lines.append(
-            f" Noise: {TEST_OPTIONS['noise']}% packet loss on UDP {PEER_DISCOVERY_PORT}/{BCAST_PORT}"
+            f" Noise: {TEST_OPTIONS['noise']}% packet loss on UDP {PEER_DISCOVERY_PORT}/{broadcast_port}"
         )
     lines.append("")
 
@@ -136,7 +136,7 @@ def apply_noise(percent: int):
     if system == "Darwin":
         rule = (
             "block drop in quick proto udp from any to any "
-            f"port {{{PEER_DISCOVERY_PORT},{BCAST_PORT}}} probability {percent}%\n"
+            f"port {{{PEER_DISCOVERY_PORT},{broadcast_port}}} probability {percent}%\n"
         )
 
         with open(NOISE_RULE_PATH, "w") as f:
@@ -151,7 +151,7 @@ def apply_noise(percent: int):
             f.write(f'load anchor "elevator_noise" from "{NOISE_RULE_PATH}"\n')
 
         print(
-            f"[*] Enabling {percent}% packet loss on UDP ports {PEER_DISCOVERY_PORT} and {BCAST_PORT}..."
+            f"[*] Enabling {percent}% packet loss on UDP ports {PEER_DISCOVERY_PORT} and {broadcast_port}..."
         )
         subprocess.run(["sudo", "pfctl", "-f", NOISE_CONF_PATH], check=True)
         subprocess.run(["sudo", "pfctl", "-e"], check=True)
@@ -171,10 +171,10 @@ def apply_noise(percent: int):
             "-i",
             "--unsafe",
             str(PEER_DISCOVERY_PORT),
-            str(BCAST_PORT),
+            str(broadcast_port),
         ]
         print(
-            f"[*] Enabling {percent}% packet loss on UDP {PEER_DISCOVERY_PORT}/{BCAST_PORT} (Linux/iptables)..."
+            f"[*] Enabling {percent}% packet loss on UDP {PEER_DISCOVERY_PORT}/{broadcast_port} (Linux/iptables)..."
         )
         _NOISE_PROCESS = subprocess.Popen(cmd, start_new_session=True)
         NOISE_ENABLED = True
@@ -350,7 +350,7 @@ def _open_tmux_viewer():
 
 def _node_launch_command(node_id, port):
     binary = os.path.join(ROOT_DIR, "target", "debug", "TTK4145-Elevator-project")
-    base_cmd = [binary, node_id, str(port), str(BCAST_PORT)]
+    base_cmd = [binary, node_id, str(port), str(broadcast_port)]
 
     if stdbuf := shutil.which("stdbuf"):
         return [stdbuf, "-oL", *base_cmd]
@@ -444,7 +444,7 @@ def get_current_network_state():
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
             except AttributeError:
                 pass
-        sock.bind(("", BCAST_PORT))
+        sock.bind(("", broadcast_port))
         sock.settimeout(0.5)
         deadline = time.time() + 0.5
         while time.time() < deadline:

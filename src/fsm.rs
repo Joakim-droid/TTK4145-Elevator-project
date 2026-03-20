@@ -32,6 +32,10 @@ pub fn step(
 ) {
     let local_elevator_state = system_state.get_my_state();
 
+    if local_elevator_state.get_behavior() == Behaviour::Idle {
+        elevator_driver.motor_direction(Direction::Stop.into());
+    }
+
     let is_floor = elevator_driver.floor_sensor().is_some();
 
     if local_elevator_state.is_emergency_stop() {
@@ -89,7 +93,6 @@ pub fn step(
                 println!("[EVENT] door_opened floor={}", current_floor);
                 elevator_driver.door_light(true);
                 spawn_door_timer(timer_id, event_tx.clone());
-                // TODO: Clear orders at this floor,
                 system_state.clear_order(current_floor);
                 println!("[EVENT] order_cleared floor={}", current_floor);
             } else {
@@ -132,7 +135,6 @@ pub fn step(
                 elevator_driver.motor_direction(Direction::Stop.into());
                 elevator_driver.door_light(true);
                 spawn_door_timer(timer_id, event_tx.clone());
-                // TODO: Clear orders at this floor
                 system_state.clear_order(current_floor);
                 println!("[EVENT] order_cleared floor={}", current_floor);
             } else {
@@ -190,3 +192,4 @@ pub fn step(
         }
     }
 }
+
