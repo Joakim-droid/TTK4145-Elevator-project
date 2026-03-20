@@ -8,7 +8,7 @@ use crate::{
     },
     types::{event::Event, systemstate::SystemState},
 };
-use crossbeam_channel::{self as cbc, select, Receiver, Sender};
+use crossbeam_channel::{self as cbc, Receiver, Sender, select};
 use network_rust::udpnet::peers::PeerUpdate;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use std::{
@@ -22,7 +22,6 @@ fn new_tx_socket() -> std::io::Result<UdpSocket> {
     let sock = Socket::new(Domain::ipv4(), Type::dgram(), Some(Protocol::udp()))?;
     sock.set_broadcast(true)?;
     sock.set_reuse_address(true)?;
-    #[cfg(all(unix, not(any(target_os = "solaris", target_os = "illumos"))))]
     sock.set_reuse_port(true)?;
     Ok(sock.into_udp_socket())
 }
@@ -31,7 +30,6 @@ fn new_rx_socket(port: u16) -> std::io::Result<UdpSocket> {
     let sock = Socket::new(Domain::ipv4(), Type::dgram(), Some(Protocol::udp()))?;
     sock.set_broadcast(true)?;
     sock.set_reuse_address(true)?;
-    #[cfg(all(unix, not(any(target_os = "solaris", target_os = "illumos"))))]
     sock.set_reuse_port(true)?;
 
     let local_addr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port);
@@ -201,13 +199,10 @@ pub fn spawn_peer_discovery(my_id: String, event_tx: Sender<Event>, port: u16) {
     });
 }
 
-/// Drain peer-broadcast packets for 2 seconds so we can recover cab orders
-/// that peers still hold from our previous boot, before our fresh (empty)
-/// state overwrites their copy.
+/// Drain peer state packets for 2 seconds to recover cab orders from peers
+/// before our empty state overwrites theirs.
 ///
-/// 2 s > PEER_DISCOVERY_TIMEOUT (1500 ms): a node that started up to 1.5 s
-/// late will still have been discovered and heard from before we enter the
-/// main loop.
+/// 2s > PEER_DISCOVERY_TIMEOUT (1.5s): ensures late nodes are discovered.
 pub fn startup_peer_sync(peer_state_rx: &Receiver<SystemState>, system_state: &mut SystemState) {
     let sync_deadline = Instant::now() + Duration::from_secs(2);
     loop {
@@ -216,7 +211,6 @@ pub fn startup_peer_sync(peer_state_rx: &Receiver<SystemState>, system_state: &m
             break;
         }
         // Use `if let Ok` so a timeout (Err) does NOT break the loop early.
-        // The loop must run until the wall-clock deadline expires (see AGENTS.md §15).
         if let Ok(peer_state) = peer_state_rx.recv_timeout(remaining) {
             system_state.merge_with(&peer_state);
         }

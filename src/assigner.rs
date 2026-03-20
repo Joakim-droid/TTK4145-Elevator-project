@@ -5,7 +5,7 @@ use crate::types::systemstate::SystemState;
 use std::collections::HashMap;
 use std::process::Command;
 
-//
+
 pub fn decide_next_order(system_state: &SystemState) -> Option<u8> {
 
     let mut system_state_clone = system_state.clone();

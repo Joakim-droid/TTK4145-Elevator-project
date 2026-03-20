@@ -23,13 +23,6 @@ mod parser;
 mod types;
 
 fn main() {
-    // If any worker thread panics (e.g. simulator disconnect), terminate the whole node.
-    // Otherwise peer heartbeat can stay alive and prevent dead-elevator takeover.
-    std::panic::set_hook(Box::new(|panic_info| {
-        eprintln!("Fatal panic, shutting down node: {}", panic_info);
-        std::process::exit(1);
-    }));
-
     let (my_id, elevatorserver_port, broadcast_port) = parser::parse();
     let elevator_address = format!("localhost:{}", elevatorserver_port);
 
@@ -71,28 +64,18 @@ fn main() {
         state: &system_state,
     });
 
-    // Prime the broadcast ticker before the sync window so peers receive our
-    // heartbeats and can send us their state (including our backed-up cab orders).
-    // Without this, all nodes are silent during the sync window and never discover
-    // each other on a fresh cluster start.
+    // Prime the broadcast ticker before sync so peers can discover each other and share state.
     state_to_broadcast_tx.send(system_state.clone()).unwrap();
-
     startup_peer_sync(&peer_state_rx, &mut system_state);
-
-    // Mark startup sync as complete. After this point, recover_from_backup will
-    // no longer fire in merge_with — this elevator's own cab state is authoritative.
     system_state.mark_sync_complete();
 
     logger::log(LogEvent::PostSyncState {
         state: &system_state,
     });
 
-    // Send the recovered (merged) state so peers learn our final post-sync view.
+    // Send the recovered post-sync state.
     state_to_broadcast_tx.send(system_state.clone()).unwrap();
 
-    // The last goal floor assigned to this elevator. Kept across floor-reached events
-    // so that the FSM can open the door upon arrival even if the assigner transiently
-    // assigns the order to another elevator at the exact moment we arrive.
     let mut current_goal: Option<u8> = assigner::decide_next_order(&system_state);
 
     loop {
@@ -126,9 +109,7 @@ fn main() {
                         elevator_driver.floor_indicator(floor);
 
 
-                        // Use the cached goal so the FSM opens the door upon arrival
-                        // even if the assigner transiently reassigns this order to
-                        // another elevator at the exact moment we reach the floor.
+                        // Use cached goal at arrival to avoid missing door-open if assignment briefly flips.
                         fsm::execute_state_transition(
                             &elevator_driver,
                             &mut system_state,
@@ -137,8 +118,7 @@ fn main() {
                             false
                         );
 
-                        // Refresh the goal after FSM has processed the arrival
-                        // (the order may have been cleared by clear_order above).
+                        // Refresh the goal after FSM has processed
                         current_goal = assigner::decide_next_order(&system_state);
 
                     },
@@ -146,13 +126,9 @@ fn main() {
                     Ok(Event::ButtonPressed(floor,order)) => {
                         system_state.add_order(floor, order);
 
-                        // For hall orders, send an immediate high-redundancy broadcast
-                        // to minimise the crash window during which no peer has seen the order.
-                        match order {
-                            OrderType::HallUp | OrderType::HallDown => {
-                                eager_broadcast_tx.send(system_state.clone()).unwrap();
-                            }
-                            OrderType::Cab => {}
+                        // Send hall order as fast as possible.
+                        if matches!(order, OrderType::HallUp | OrderType::HallDown) {
+                            eager_broadcast_tx.send(system_state.clone()).unwrap();
                         }
 
                         current_goal = assigner::decide_next_order(&system_state);
@@ -190,14 +166,18 @@ fn main() {
                     Ok(Event::DoorOpenTimeOut(timer_id)) => {
                         let my_state = system_state.get_my_state();
 
-                        // If obstructed, ignore timeout
-                        if my_state.is_obstructed() {
-                            if my_state.get_current_timer_id() == timer_id
-                                && let Some(new_id) = my_state.open_door() {
-                                    elevator_driver.door_light(true);
-                                    fsm::spawn_door_timer(new_id, event_tx.clone());
-                                }
-                        } else if my_state.get_current_timer_id() == timer_id {
+                        if my_state.get_current_timer_id() != timer_id {
+
+                            logger::log(LogEvent::StaleTimer { timer_id });
+
+                        } else if my_state.is_obstructed() {
+
+                            if let Some(new_id) = my_state.open_door() {
+                                elevator_driver.door_light(true);
+                                fsm::spawn_door_timer(new_id, event_tx.clone());
+                            }
+
+                        } else {
                             elevator_driver.door_light(false);
                             my_state.close_door();
 
@@ -210,8 +190,6 @@ fn main() {
                                 event_tx.clone(),
                                 false
                             );
-                        } else {
-                            logger::log(LogEvent::StaleTimer { timer_id });
                         }
 
                     },
@@ -232,7 +210,7 @@ fn main() {
                         } else {
                             let hardware_floor = elevator_driver.floor_sensor();
                             if hardware_floor.is_some(){
-                                // Ensure door is open and timer restarted if we become unobstructed while the door is still open
+                                // Restart door timer to ensure door stays open for full duration after obstruction cleared.
                                 if let Some(new_id) = my_state.open_door() {
                                     elevator_driver.door_light(true);
                                     fsm::spawn_door_timer(new_id, event_tx.clone());
@@ -246,24 +224,20 @@ fn main() {
                         my_state.set_emergency_stop(is_stopped);
                         elevator_driver.stop_button_light(is_stopped);
 
-                        if is_stopped {
-                            fsm::execute_state_transition(
-                                &elevator_driver,
-                                &mut system_state,
-                                None,
-                                event_tx.clone(),
-                                false
-                            );
+                        let goal = if is_stopped {
+                            None
                         } else {
                             current_goal = assigner::decide_next_order(&system_state);
-                            fsm::execute_state_transition(
-                                &elevator_driver,
-                                &mut system_state,
-                                current_goal,
-                                event_tx.clone(),
-                                false
-                            );
-                        }
+                            current_goal
+                        };
+
+                        fsm::execute_state_transition(
+                            &elevator_driver,
+                            &mut system_state,
+                            goal,
+                            event_tx.clone(),
+                            false
+                        );
                     }
                     Err(_) => eprintln!("Error in event loop"),
                 }
